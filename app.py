@@ -34,8 +34,7 @@ def init_session_state():
     if 'messages' not in st.session_state:
         st.session_state.messages = []
     if 'api_key' not in st.session_state:
-        # This is just a placeholder - in production you would use a more secure approach
-        st.session_state.api_key = "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"
+        st.session_state.api_key = st.secrets["openai"]["api_key"]
     if 'company_name' not in st.session_state:
         st.session_state.company_name = "ACME S.A."
 
