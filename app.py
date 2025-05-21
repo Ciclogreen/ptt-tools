@@ -372,7 +372,7 @@ def main():
             st.markdown(st.session_state.summary_result)
             
             # Create visualizations
-            create_visualizations(st.session_state.df_one_hot)
+            # create_visualizations(st.session_state.df_one_hot)
         
         with tab2:
             # Chat interface
