@@ -39,7 +39,7 @@ def init_session_state():
         st.session_state.company_name = "ACME S.A."
 
 # Data processing functions
-def slugify(text: str, maxlen: int = 100) -> str:
+def slugify(text: str, maxlen: int = 1000) -> str:
     """
     Replace non-alphanumeric chars by underscores, collapse repeats,
     trim to `maxlen`, and ensure no leading/trailing underscores.
@@ -52,9 +52,12 @@ def load_surveymonkey_one_hot(csv_path: str) -> pd.DataFrame:
     Read the raw SurveyMonkey CSV and return a one-hot encoded DataFrame.
     Row 0: full question wording
     Row 1:   • 'Open-Ended Response'  → open question
+             • 'Other (please specify)' or similar → one-hot + text preserved
              • anything else          → option label
     The function preserves open-ended answers as text and converts every
     closed option (single-choice o multi-choice) into a binary column.
+    For "Other (please specify)" options, it creates both a binary column
+    and preserves the specified text in a separate column.
     """
     raw = pd.read_csv(csv_path, header=None, dtype=object)
     questions = raw.iloc[0]      # first row
@@ -74,7 +77,21 @@ def load_surveymonkey_one_hot(csv_path: str) -> pd.DataFrame:
             new_name = current_question
             df.rename(columns={idx: new_name}, inplace=True)
 
-        # Otherwise the cell contains an option label → one-hot
+        # Check for "Other (please specify)" or similar options
+        elif any(keyword in str(option_row[idx]).lower() for keyword in ["otro (especifique)", "especifique", "añade información"]):
+            # Create the binary indicator column
+            option_label = slugify(str(option_row[idx]))
+            binary_name = f"{current_question}__{option_label}"
+            df[binary_name] = df[idx].notna().astype("int8")
+            
+            # Create a text column to preserve the specified text
+            text_name = f"{current_question}__{option_label}_text"
+            df[text_name] = df[idx]
+            
+            # Original column not needed anymore
+            columns_to_drop.append(idx)
+
+        # Otherwise the cell contains a standard option label → one-hot
         else:
             option_label = slugify(str(option_row[idx]))
             new_name = f"{current_question}__{option_label}"
@@ -127,7 +144,8 @@ def call_llm_api(message_content, clear=False):
             user_message = {"role": "user", "content": message_content}
             st.session_state.messages.append(user_message)
 
-        model = "openai/o3"
+        model = "openai/o4-mini"
+        # model = "openai/o3"
         # model = "openai/gpt-4o-mini"
         
         # Asegurarse de que todos los mensajes tienen formato válido antes de enviarlos
@@ -375,7 +393,7 @@ def main():
                 st.session_state.analysis_result = process_with_llm(df=st.session_state.df_one_hot)
                 
                 # Process with second prompt (redaction)
-                st.session_state.redaction_result = generate_redaction()
+                # st.session_state.redaction_result = generate_redaction()
 
                 # Process with second prompt (summary)
                 st.session_state.summary_result = generate_summary()
