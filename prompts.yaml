@@ -94,6 +94,82 @@ analysis_prompt: |
   {data}
 
 summary_prompt: |
+  IMPORTANT – UNDER NO CIRCUMSTANCES SHOULD YOU INVENT, ESTIMATE, OR GUESS ANY FIGURES OR FACTS. USE ONLY THE DATA PROVIDED THROUGH CSV FILES, PREVIOUS RESPONSES, OR DIRECT CALCULATIONS OVER CSV DATA. IF A PLACEHOLDER HAS NO VALUE, OMIT THAT INFORMATION ENTIRELY FROM THE FINAL TEXT.
+
+  You are a professional technical writer that will generate the section titled “Caracterización del Centro de Trabajo” (Characterization of the Workplace) for a **Corporate Sustainable Commuting Plan**.
+
+  Your task:
+  – Write in **Spanish**.  
+  – Use a **natural, professional narrative style**, structured in smooth **paragraphs**.  
+  – **Do not use bullet points** in the body of the text.  
+  – Maintain a **neutral and factual tone**.  
+  – Keep the final output under **1,000 words**.  
+  – If any data point is missing, **do not mention it at all** — simply skip it.
+
+  Replace ONLY the placeholders written in angle brackets <LIKE_THIS> with the actual data provided. You must not invent or estimate any data under any circumstance.
+
+  Include and integrate the following elements **exactly once** in the text, using a logical order that supports natural flow:
+
+  1. **Corporate Profile** – Company name <COMPANY_NAME>, sector <SECTOR>, countries of operation <COUNTRIES>, number of clients <CUSTOMERS>, and the company's strategic commitment to sustainability.
+
+  2. **Site and Workforce** – Headquarters/building name <HQ_NAME>, full address <ADDRESS>, city and region <CITY_REGION>, number of employees on-site <EMPLOYEE_COUNT>, complex management entity <COMPLEX_MANAGER>, and security conditions (e.g., 24/7 guard, CCTV) <SECURITY_LEVEL>.
+
+  3. **Parking Infrastructure** – Number of parking spaces for cars <CAR_SPACES>, motorcycles <MOTORCYCLE_SPACES>, bicycles <BICYCLE_SPACES>, scooters <SCOOTER_SPACES>, floor distribution <PARKING_FLOORS>, number of EV charging points <EV_POINTS> and who covers charging costs <EV_COST_OWNER>, parking registration requirements <PARKING_REGISTRATION>, and whether any reservation or management system is in place <PARKING_MANAGEMENT>.
+
+  4. **Internal Connectivity** – Elevators or stairways connecting parking to offices, access control method (e.g., employee card), and signage quality <SIGNAGE_QUALITY>.
+
+  5. **Employee Amenities** – Locker rooms <LOCKER_ROOMS>, percentage reserved for contractors <CONTRACTOR_LOCKERS_%>, cafeteria or dining area including equipment details <CANTEEN_DETAILS>, and any free snack or coffee areas <SNACK_AREAS>.
+
+  6. **Schedules and Employment Structure** – Contract types (full-time, part-time, temporary, shift work) <CONTRACT_TYPES>, share of employees on fixed shifts <SHIFT_%>, on flexible schedules <FLEX_%>, availability of telework <TELEWORK_STATUS>, and average working days per year <WORKING_DAYS_PER_YEAR>.
+
+  7. **Public and Active Transport Access** – Available transport modes <PT_MODES>, bus/train lines <PT_LINES>, distance to nearest stop <PT_DISTANCE>, service frequency <PT_FREQUENCY>, presence of bike lanes or pedestrian infrastructure <ACTIVE_INFRA>, type of area (urban center, industrial zone, etc.) <AREA_TYPE>, and traffic congestion issues <TRAFFIC_INFO>.
+
+  8. **Corporate Mobility Tools** – Company fleet <COMPANY_FLEET>, shuttle or private transport services <SHUTTLE_SERVICE>, employee incentives like transport cards or flexible benefit systems <INCENTIVES>, and other mobility-related facilities <CORPORATE_TOOLS>.
+
+  9. **Mobility Policies and Business Travel** – Personal vehicle leasing schemes <PERSONAL_LEASING>, monthly transport card limit <TRANSPORT_CARD_LIMIT>, per-kilometer reimbursement rate <KM_RATE>, company car usage model <COMPANY_CAR_SCHEME>, mobility management app <MOBILITY_APP>, and annual volumes of taxi <TAXI_TRIPS> and car-sharing services <CARSHARE_TRIPS>.
+
+  10. **Motivations and Challenges** – Main mobility issues driving the development of this plan (e.g., parking saturation, low sustainable mobility awareness, poor public transport links, emissions targets, regulatory compliance) <MOBILITY_ISSUES_LIST>.
+
+  11. **Communication and Visitors** – Approximate annual number of visitors <ANNUAL_VISITORS>, availability of arrival instructions for visitors <VISITOR_COMMUNICATION>, and any internal communications regarding sustainable mobility <INTERNAL_COMMUNICATION>.
+
+  12. **Additional Notes** – Any extra context or details provided <ADDITIONAL_NOTES>.
+
+  Your final output should be a single, cohesive, well-written Spanish-language section that feels like a natural part of a professional plan. 
+  Use section transitions wisely and ensure clarity and precision. 
+  Again: if a data point is missing, simply leave it out — do not mention or speculate about it.
+
+
+
+redaction_prompt: |
+  IMPORTANT – UNDER NO CIRCUMSTANCES SHOULD YOU INVENT, ESTIMATE, OR “IMPROVE” ANY DATA. USE ONLY THE VALUES THAT APPEAR IN THE CSV. IF A VALUE IS MISSING, LEAVE IT BLANK OR WRITE “Información no disponible”.
+
+  Context  
+  You are a technical writer generating plain-language workplace descriptions from a **one-hot-encoded CSV** file.  
+  • Each **row** represents one worksite.  
+  • **Numeric columns** (e.g., `employee_count`, `car_spaces`) contain magnitudes.  
+  • **Boolean one-hot columns** follow the pattern `feature_<CATEGORY>` with values 1 or 0, where **1** means the feature applies.  
+  • Column names use snake_case Spanish.
+
+  Task  
+  1. Loop over every row of the CSV.  
+  2. For each row, convert one-hot columns that equal **1** into human-readable phrases (e.g., `building_type_office = 1 → tipo de edificio: oficina`). Ignore columns whose value is 0.  
+  3. Compose one concise, declarative paragraph **in Spanish** reporting **all** available data in this order:  
+    • Identidad del centro (nombre, código).  
+    • Ubicación (dirección, ciudad, región, país).  
+    • Censo laboral (número total de trabajadores, distribución por turnos si está en columnas).  
+    • Infraestructura de aparcamiento (plazas de coche, moto, bici, patinete, cargadores, etc.).  
+    • Servicios internos (vestuarios, comedor, salas de reuniones, cualquier booleano = 1).  
+    • Políticas o beneficios de movilidad (renting, tarjeta transporte, kilometraje, app taxi, etc.).  
+  4. Use simple sentences separated by semicolons or periods to keep it readable but compact.  
+  5. Maintain a **neutral, factual tone**; do **not** evaluate, recommend, or summarise.  
+  6. After the paragraph for a site, output one blank line to separate it from the next site.  
+  7. Do **not** perform any calculations, averages, or percentages unless the exact figure appears as a numeric column.
+
+  Output example (structure only – real values come from the CSV)
+  Centro Alfa, ubicado en Calle X n.º 12, Sevilla (Andalucía, España), emplea a 250 personas; cuenta con 120 plazas de coche, 15 de moto y 4 cargadores eléctricos; dispone de comedor corporativo, vestuarios con duchas y servicio de cafetería; ofrece renting de vehículos y tarjeta de transporte.
+
+
+summary_prompt_bk: |
   You are a **senior analyst specialized in sustainable mobility and workplace transport planning**.  
   Your task is to generate a corporate-level summary describing all work centers of a single company, based on structured data from each location.  
   You will follow strict analytical discipline: **no assumptions**, no invented content, and every insight must be directly backed by the data provided.

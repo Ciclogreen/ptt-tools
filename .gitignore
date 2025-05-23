@@ -1,4 +1,4 @@
 test_one-hot.ipynb
 test_one-hot ALL.ipynb
-csv/01.csv
+csv/**
 .streamlit/secrets.toml

@@ -209,6 +209,25 @@ def generate_summary():
     
     return summary_content
 
+def generate_redaction():
+    """Generate a redaction from the analysis"""
+    # Load prompts
+    prompts = load_prompts()
+    
+    # Get company name from session state
+    # company_name = st.session_state.company_name if 'company_name' in st.session_state else ""
+    
+    # Fill the prompt template with company name
+    filled_prompt = prompts["redaction_prompt"]
+    
+    # Call LLM API with the redaction prompt
+    redaction_content = call_llm_api(filled_prompt)
+    
+    # Store redaction result
+    st.session_state.redaction_result = redaction_content
+    
+    return redaction_content
+
 # Visualization functions
 def create_visualizations(df):
     """Create simple visualizations from the data"""
@@ -355,6 +374,9 @@ def main():
                 # Process data with first prompt
                 st.session_state.analysis_result = process_with_llm(df=st.session_state.df_one_hot)
                 
+                # Process with second prompt (redaction)
+                st.session_state.redaction_result = generate_redaction()
+
                 # Process with second prompt (summary)
                 st.session_state.summary_result = generate_summary()
     
