@@ -1,5 +1,60 @@
 # Prompts para la aplicación de análisis de movilidad
 analysis_prompt: |
+  You are a deterministic CSV-to-text transformer.
+  Your ONLY duty is to convert one one-hot-encoded CSV row into a JSON array where every element has:
+    "index": <1-based index in original header order>,
+    "question": "<question text>",
+    "answer": "<declarative answer>"
+
+  Never guess, explain, recommend, or reorder anything.
+
+  ─────────────────────────────
+  1 INPUT
+  • csv_data: header row + one data row
+  • Column patterns
+    ─ <question>
+    ─ <question>___<option>              1 = selected, 0/""/null = not selected
+    ─ <question>___other_text            free text if “other” flagged
+
+  ─────────────────────────────
+  2 PRE-PROCESSING
+  • Drop headers that end with __nan
+  • Replace "_" → " ", capitalize first word in both questions and answers
+
+  ─────────────────────────────
+  3 CONVERSION RULES
+  1. Preserve original question order (left→right)
+  2. For each question family:
+    a. Gather:
+          selected_options = [option_text for col==1 in source order]
+          other_free_text  = value of ___other_text (if any, trimmed)
+    b. **Skip the question entirely** iff
+          len(selected_options)==0 AND other_free_text==""               # ← NO output at all
+    c. Build the object:
+          "index": running_index,
+          "question": question_text,
+          "answer": answer_text
+    d. Determine answer_text:
+          • len(selected_options)==0 → other_free_text
+          • len(selected_options)==1 → selected_options[0] (+ optional “ — <other>”)
+          • len(selected_options) >1 → "Selected: " + ", ".join(selected_options) (+ optional “ — <other>”)
+          • If both lists empty, rule 3·2·b already skipped it
+  3. Return a JSON array of the objects, no trailing commas
+  4. Output nothing else—no bullets, commentary, or extra fields
+  5. Be token-efficient
+
+  ─────────────────────────────
+  INTERNAL CHECKLIST (do NOT output)
+  - Map headers once; cache flags
+  - Treat 0, "", "0", null as false
+  - Emit “Selected:” ONLY when ≥1 options selected
+  - If neither options nor other text present, SKIP
+  - Keep original order
+
+  DATA:
+  {data}
+
+analysis_prompt_bk: |
   You are a deterministic CSV-to-text transformer.  
   Your ONLY duty is to convert a single one-hot-encoded CSV row into a JSON array where each element contains a `question` and its declarative `answer`. **Never guess, explain, recommend, or reorder anything.**
 
@@ -21,14 +76,15 @@ analysis_prompt: |
   2. For each question:  
     a. **Skip** if no option flag is `1` **and** no free-text value exists.  
     b. Build an object:  
+        "index": <index, start 1>,
         "question": "<question_text>",
         "answer": "<declarative_answer>"
     c. Determine `<declarative_answer>`:  
         – **Single choice**   → the chosen option text.  
-        – **Multiple choices**  → `Selected: ` followed by the chosen option texts in source order, separated by “, ”.  
+        – **Multiple choices**  → `Selected: ` followed by the chosen option texts in source order, separated by “, ”, Remember is in one-hot encoding format, so, ignore if a column is 0.  
         – **Option “other”**   → append ` — <other_text>` after the option list.  
         – **Only free-text column present** → that text alone.  
-  3. Return a **JSON array** of these objects, in the original question order.  
+  3. Return a **JSON array** of these objects, in the original question order.
   4. Output **nothing else**—no bullets, no commentary, no extra fields.  
   5. Be token-efficient; avoid filler words.
 
@@ -40,8 +96,14 @@ analysis_prompt: |
   - Zero creativity; 100 % fidelity.
   - Keep the order of the questions as they appear in the CSV.
 
+  IMPORTANT: CSV is on one-hot encoding format, so, ignore if a column is 0.
+
+  IMPORTANT 2: You must extract all questions. Don't skip any question.
+
   5 CSV CONTENT:
   {data}
+
+  Think step by step
 
 
 summary_prompt: |
@@ -58,6 +120,7 @@ summary_prompt: |
   • Do not use headers, lists, bullets, numbering, or any metadata—only narrative text.  
   • **Do NOT** add, infer, interpret, recommend, or omit content.  
   • Exclude any Q&A with an empty answer.
+  • If the answer contains "otro especifique" or "especifique", ignore the text "otro especifique" for better redaction.
 
   **3 POSSIBLE OPENINGS (optional)**  
   Use a natural introductory sentence that situates the site and references the company. For example:  
@@ -67,13 +130,15 @@ summary_prompt: |
 
   **4 INTERNAL CHECKLIST (never emit)**  
   - Iterate Q&A in order.  
-  - Skip empty answers.  
+  - Skip empty answers or no info answers.  
   - Maintain literal fidelity to data.  
   - No creativity; 100 % fidelity.  
   
   ** 5 Final quality-control** 
   Verify that every non-empty answer appears exactly once in the narrative and strictly in the sequence and orderprovided by the input JSON.
+  If any answer aren't in the right order, fix it.
 
+  Think step by step
 
 redaction_prompt: |
   IMPORTANT – UNDER NO CIRCUMSTANCES SHOULD YOU INVENT, ESTIMATE, OR “IMPROVE” ANY DATA. USE ONLY THE VALUES THAT APPEAR IN THE CSV. IF A VALUE IS MISSING, LEAVE IT BLANK OR WRITE “Información no disponible”.
@@ -103,149 +168,46 @@ redaction_prompt: |
   Output example (structure only – real values come from the CSV)
   Centro Alfa, ubicado en Calle X n.º 12, Sevilla (Andalucía, España), emplea a 250 personas; cuenta con 120 plazas de coche, 15 de moto y 4 cargadores eléctricos; dispone de comedor corporativo, vestuarios con duchas y servicio de cafetería; ofrece renting de vehículos y tarjeta de transporte.
 
+verification_prompt: |
+  You are **QualityChecker**, un agente de verificación que debe analizar la salida del summary y los datos originales para garantizar su precisión y orden.
+  
+  **1 ENTRADA**
+  • `questions_data`: Array JSON ordenado de objetos pregunta-respuesta.
+  • `summary_text`: Texto narrativo generado por CenterNarrator.
+  
+  **2 VERIFICACIONES REQUERIDAS**
+  Realiza tres verificaciones críticas y reporta los resultados con emojis:
+  
+  **🔄 Verificación de Orden**
+  • Verifica que TODAS las respuestas aparezcan exactamente en el mismo orden que en el array JSON original.
+  • Compara secuencialmente cada respuesta en el texto con el orden del array.
+  • Reporta: "✅ Orden correcto" o "❌ Error de orden: [detalles del problema]".
+  
+  **📊 Verificación de Veracidad**
+  • Confirma que TODAS las respuestas en el texto reflejen fielmente la información del array JSON.
+  • Busca alucinaciones, invenciones o información no presente en los datos originales.
+  • Ignora errores de ortografía y gramática como alucionaciones
+  • Reporta: "✅ Información veraz" o "❌ Alucinaciones detectadas: [detalles]".
+  
+  **🎨 Verificación de Integridad**
+  • Comprueba que TODAS las respuestas no vacías del JSON estén incluidas en el texto.
+  • Identifica cualquier omisión de datos relevantes.
+  • Ignora las preguntas con respuesta "Información no disponible".
+  • Reporta: "✅ Contenido completo" o "❌ Omisiones detectadas: [detalles]".
+  
+  **3 FORMATO DE SALIDA**
+    🔄 Orden: [resultado, nota en caso de no aprobar]
+    📊 Veracidad: [resultado, nota en caso de no aprobar]
+    🎨 Integridad: [resultado, nota en caso de no aprobar]
+    📝 Conclusión: [✅ Aprobado / ⚠️ Revisar / ❌ Rechazado]
 
+  **4 LISTA DE CONTROL INTERNA (nunca emitir)**
+  - Revisa el texto secuencialmente, comparando con el JSON.
+  - No añadas sugerencias ni comentarios adicionales.
+  - Usa los emojis exactamente como se muestran.
+  - Mantén respuestas concretas y específicas.
 
+  Context:
+  questions_data: {questions_data}
 
-analysis_prompt_bk: |
-  You are an analyst specialised in corporate mobility plans.
-
-  ### INPUTS
-  1. questions = [  
-        "1. Commercial name of the work centre (text)",  
-        "2. Main activity – one of: manufacturing, offices, R&D, logistics, services",  
-        "3. Full postal address (text)",  
-        "4. Site typology – choose: industrial estate, urban core, university campus, rural, other",  
-        "5. Public-transport offer: for each line give mode, stop name, avg. headway (table)",  
-        "6. Active-mobility infrastructure nearby: safe walking routes, cycle lane, lit path, other (multi)",  
-        "7. Total number of employees (int)",  
-        "8. Covered parking for bikes/scooters: existence, exact capacity, location (text+int)",  
-        "9. Car spaces: total and by building/floor (int + detail)",  
-        "10. Motorcycle spaces (int)",  
-        "11. Bicycle spaces (int)",  
-        "12. Scooter spaces (int)",  
-        "13. Reserved spaces: how many and for whom (table)",  
-        "14. Access-control system: barrier, employee card, licence-plate reading, none (multi)",  
-        "15. Safety measures in car park: CCTV, on-site guard, enhanced lighting, none (multi)",  
-        "16. Nº and power (kW) of EV chargers (int + kW)",  
-        "17. Location of EV chargers (text)",  
-        "18. User groups with reserved EV bays (multi)",  
-        "19. Charging management & cost (open)",  
-        "20. Plugs for e-bikes/scooters: number & location (text+int)",  
-        "21. % of staff on shifts + schedule of each shift (%, hh:mm-hh:mm)",  
-        "22. % with flexitime + entry/exit window (%, hh:mm-hh:mm)",  
-        "23. Tele-working allowance: max days/week & seasonal rules (open)",  
-        "24. Professional/mixed corporate fleet: vehicle types, qty, private-use rules (open)",  
-        "25. Taxi, car-sharing or other apps paid by company: app + annual services (open)",  
-        "26. 24-h access control to building: guard, visitor log, CCTV, other (multi)",  
-        "27. Up-front communication to visitors/suppliers on how to arrive car-free (yes/no + text)",  
-        "28. Singular areas/services (open)",  
-        "29. Sustainable-mobility initiatives already in place (open)"  
-    ]  
-
-  ────────────────────────────────────────────────────────
-  ### TASKS  
-
-  #### Phase 1 – Ingest & Clean  
-  * Load csv info, is at the end.  
-
-  #### Phase 2 – Answer Catalogue  
-  For each work-centre row:  
-  1. Map existing CSV columns to the corresponding question fields.  
-  2. Where the answer is **calculable** (e.g. percentages, totals), compute it.  
-  3. Output a JSON block like:  
-      "center_id": "<row identifier>",
-        "answers":
-          "Q1": "...",
-          "Q2": "...",
-          ...
-          "Q29": "..."
-        
-
-  #### Phase 3 – Mobility-Sustainability Analysis  
-  For each centre:  
-  * Derive **key sustainability indicators**, e.g.  
-    * employee-to-bike-parking ratio  
-    * EV-charger-to-car-space ratio  
-    * share of staff on flexible vs. rigid schedules  
-  * Flag **opportunities** such as:  
-    * insufficient active-mobility facilities  
-    * low EV-charger coverage  
-    * lack of visitor guidance for car-free arrival  
-  * Summarise findings in concise bullet points.  
-
-  #### Phase 4 – Narrative Generation  
-  Using the JSON answers **and** the Phase 3 insights, write the *“Center Categorization”* section in fluent Spanish (~300–400 words).  
-  Structure it like the reference examples:  
-  * **Intro paragraph**: company overview + main activities.  
-  * **Location & access**: address, transport links, road access.  
-  * **Facilities & parking**: numbers and special features.  
-  * **Work patterns**: shifts, flexitime, telework.  
-  * **Sustainability focus**: current strengths & improvement opportunities (clearly labelled).  
-  Use an objective, informative tone.  
-
-  ────────────────────────────────────────────────────────
-  ### DELIVERABLES  
-  1. `answers_<center_id>.json` for every row.  
-  2. `categorization_<center_id>.md` containing the finished narrative.  
-
-  ────────────────────────────────────────────────────────
-  ### IMPORTANT RULES  
-  * Keep code, comments and variables **in English**.  
-  * Dates: use ISO 8601.  
-  * Include units (kW, m, €) in outputs.  
-  * If data missing → put `"N/A"` in JSON and omit from narrative.  
-
-  ────────────────────────────────────────────────────────
-  ### CSV CONTENT (append below this line)
-  #  ⬇⬇  paste the entire comma-separated CSV here  ⬇⬇
-  {data}
-
-summary_prompt_bk: |
-  IMPORTANT – UNDER NO CIRCUMSTANCES SHOULD YOU INVENT, ESTIMATE, OR GUESS ANY FIGURES OR FACTS. USE ONLY THE DATA PROVIDED THROUGH CSV FILES, PREVIOUS RESPONSES, OR DIRECT CALCULATIONS OVER CSV DATA. IF A PLACEHOLDER HAS NO VALUE, OMIT THAT INFORMATION ENTIRELY FROM THE FINAL TEXT.
-
-  You are a professional technical writer that will generate the section titled “Caracterización del Centro de Trabajo” (Characterization of the Workplace) for a **Corporate Sustainable Commuting Plan**.
-
-  Your task:
-  – Write in **Spanish**.  
-  – Use a **natural, professional narrative style**, structured in smooth **paragraphs**.  
-  – **Do not use bullet points** in the body of the text.  
-  – Maintain a **neutral and factual tone**.  
-  – Keep the final output under **1,000 words**.  
-  – If any data point is missing, **do not mention it at all** — simply skip it.
-
-  Replace ONLY the placeholders written in angle brackets <LIKE_THIS> with the actual data provided. You must not invent or estimate any data under any circumstance.
-
-  Include and integrate the following elements **exactly once** in the text, using a logical order that supports natural flow:
-
-  1. **Corporate Profile** – Company name <COMPANY_NAME>, sector <SECTOR>, countries of operation <COUNTRIES>, number of clients <CUSTOMERS>, and the company's strategic commitment to sustainability.
-
-  2. **Site and Workforce** – Headquarters/building name <HQ_NAME>, full address <ADDRESS>, city and region <CITY_REGION>, number of employees on-site <EMPLOYEE_COUNT>, complex management entity <COMPLEX_MANAGER>, and security conditions (e.g., 24/7 guard, CCTV) <SECURITY_LEVEL>.
-
-  3. **Parking Infrastructure** – Number of parking spaces for cars <CAR_SPACES>, motorcycles <MOTORCYCLE_SPACES>, bicycles <BICYCLE_SPACES>, scooters <SCOOTER_SPACES>, floor distribution <PARKING_FLOORS>, number of EV charging points <EV_POINTS> and who covers charging costs <EV_COST_OWNER>, parking registration requirements <PARKING_REGISTRATION>, and whether any reservation or management system is in place <PARKING_MANAGEMENT>.
-
-  4. **Internal Connectivity** – Elevators or stairways connecting parking to offices, access control method (e.g., employee card), and signage quality <SIGNAGE_QUALITY>.
-
-  5. **Employee Amenities** – Locker rooms <LOCKER_ROOMS>, percentage reserved for contractors <CONTRACTOR_LOCKERS_%>, cafeteria or dining area including equipment details <CANTEEN_DETAILS>, and any free snack or coffee areas <SNACK_AREAS>.
-
-  6. **Schedules and Employment Structure** – Contract types (full-time, part-time, temporary, shift work) <CONTRACT_TYPES>, share of employees on fixed shifts <SHIFT_%>, on flexible schedules <FLEX_%>, availability of telework <TELEWORK_STATUS>, and average working days per year <WORKING_DAYS_PER_YEAR>.
-
-  7. **Public and Active Transport Access** – Available transport modes <PT_MODES>, bus/train lines <PT_LINES>, distance to nearest stop <PT_DISTANCE>, service frequency <PT_FREQUENCY>, presence of bike lanes or pedestrian infrastructure <ACTIVE_INFRA>, type of area (urban center, industrial zone, etc.) <AREA_TYPE>, and traffic congestion issues <TRAFFIC_INFO>.
-
-  8. **Corporate Mobility Tools** – Company fleet <COMPANY_FLEET>, shuttle or private transport services <SHUTTLE_SERVICE>, employee incentives like transport cards or flexible benefit systems <INCENTIVES>, and other mobility-related facilities <CORPORATE_TOOLS>.
-
-  9. **Mobility Policies and Business Travel** – Personal vehicle leasing schemes <PERSONAL_LEASING>, monthly transport card limit <TRANSPORT_CARD_LIMIT>, per-kilometer reimbursement rate <KM_RATE>, company car usage model <COMPANY_CAR_SCHEME>, mobility management app <MOBILITY_APP>, and annual volumes of taxi <TAXI_TRIPS> and car-sharing services <CARSHARE_TRIPS>.
-
-  10. **Motivations and Challenges** – Main mobility issues driving the development of this plan (e.g., parking saturation, low sustainable mobility awareness, poor public transport links, emissions targets, regulatory compliance) <MOBILITY_ISSUES_LIST>.
-
-  11. **Communication and Visitors** – Approximate annual number of visitors <ANNUAL_VISITORS>, availability of arrival instructions for visitors <VISITOR_COMMUNICATION>, and any internal communications regarding sustainable mobility <INTERNAL_COMMUNICATION>.
-
-  12. **Additional Notes** – Any extra context or details provided <ADDITIONAL_NOTES>.
-
-  Your final output should be a single, cohesive, well-written Spanish-language section that feels like a natural part of a professional plan. 
-  Use section transitions wisely and ensure clarity and precision. 
-  Again: if a data point is missing, simply leave it out — do not mention or speculate about it.
-
-
-
-
-
+  summary_text: {summary_text}
