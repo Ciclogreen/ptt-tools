@@ -3,13 +3,17 @@ import pandas as pd
 import numpy as np
 import plotly.express as px
 import os
-import yaml
-import tempfile
-import csv
-import io
-from pathlib import Path
-from litellm import completion, completion_cost
 import re
+import io
+import csv
+import tempfile
+from pathlib import Path
+import json
+import yaml
+from litellm import completion, completion_cost
+
+# Importar la nueva clase SurveyMonkeyConverter
+from survey_converter import SurveyMonkeyConverter
 
 # Load prompts from YAML file
 def load_prompts():
@@ -48,8 +52,8 @@ def slugify(text: str, maxlen: int = 1000) -> str:
     Replace non-alphanumeric chars by underscores, collapse repeats,
     trim to `maxlen`, and ensure no leading/trailing underscores.
     """
-    text = re.sub(r"\W+", "_", text.lower()).strip("_")
-    return text[:maxlen]
+    # Utilizar el método estático de la clase SurveyMonkeyConverter
+    return SurveyMonkeyConverter.slugify(text, maxlen)
 
 def load_surveymonkey_one_hot(csv_path: str) -> pd.DataFrame:
     """
@@ -63,76 +67,11 @@ def load_surveymonkey_one_hot(csv_path: str) -> pd.DataFrame:
     For "Other (please specify)" options, it creates both a binary column
     and preserves the specified text in a separate column.
     """
-    raw = pd.read_csv(csv_path, header=None, dtype=object)
-    questions = raw.iloc[0]      # first row
-    option_row = raw.iloc[1]     # second row
-    df = raw.iloc[2:].reset_index(drop=True)  # actual responses
+    return SurveyMonkeyConverter.load_surveymonkey_one_hot(csv_path)
 
-    current_question = None
-    columns_to_drop = []
-    original_question_order = []  # To keep track of question order
-    column_mapping = {}  # To map original columns to new column names
-    original_to_new = {}  # To map original question slugs to new columns
-    
-    # First pass: Create all the one-hot columns
-    for idx in range(len(questions)):
-        # When a new question starts we get its full wording
-        if pd.notna(questions[idx]):
-            current_question = slugify(str(questions[idx]))
-            if current_question not in original_question_order:
-                original_question_order.append(current_question)
-            if current_question not in original_to_new:
-                original_to_new[current_question] = []
-
-        # "Open-Ended Response" → keep as plain text, just rename
-        if str(option_row[idx]).strip() == "Open-Ended Response":
-            new_name = current_question
-            df.rename(columns={idx: new_name}, inplace=True)
-            original_to_new[current_question].append(new_name)
-            column_mapping[idx] = new_name
-
-        # Check for "Other (please specify)" or similar options
-        elif any(keyword in str(option_row[idx]).lower() for keyword in ["otro (especifique)", "especifique", "añade información"]):
-            # Create the binary indicator column
-            option_label = slugify(str(option_row[idx]))
-            binary_name = f"{current_question}__{option_label}"
-            df[binary_name] = df[idx].notna().astype("int8")
-            original_to_new[current_question].append(binary_name)
-            
-            # Create a text column to preserve the specified text
-            text_name = f"{current_question}__{option_label}_text"
-            df[text_name] = df[idx]
-            original_to_new[current_question].append(text_name)
-            
-            # Original column not needed anymore
-            columns_to_drop.append(idx)
-
-        # Otherwise the cell contains a standard option label → one-hot
-        else:
-            option_label = slugify(str(option_row[idx]))
-            new_name = f"{current_question}__{option_label}"
-            df[new_name] = df[idx].notna().astype("int8")
-            original_to_new[current_question].append(new_name)
-            columns_to_drop.append(idx)  # original text not needed
-
-    # Remove original option columns
-    df.drop(columns=columns_to_drop, inplace=True)
-    
-    # Reorder columns according to original question order
-    ordered_columns = []
-    for question in original_question_order:
-        if question in original_to_new:
-            ordered_columns.extend(original_to_new[question])
-    
-    # Make sure we include any columns that weren't captured in our ordering process
-    remaining_cols = [col for col in df.columns if col not in ordered_columns]
-    ordered_columns.extend(remaining_cols)
-    
-    # Filter out columns ending with "__nan"
-    ordered_columns = [col for col in ordered_columns if not col.endswith("__nan")]
-    
-    # Return dataframe with columns in original question order
-    return df[ordered_columns]
+def one_hot_df_to_json(df: pd.DataFrame) -> list[list[dict]]:
+    """Wrapper: whole DataFrame → nested list ready for `json.dump`."""
+    return SurveyMonkeyConverter.one_hot_df_to_json(df)
 
 def dataframe_to_csv_string(df: pd.DataFrame) -> str:
     """Convert a dataframe to a CSV string"""
@@ -151,7 +90,7 @@ def read_csv_as_text() -> str:
     return '\n'.join(lines)
 
 # LLM processing functions
-def call_llm_api(message_content, clear=False):
+def call_llm_api(message_content, model="openai/gpt-4o-mini", clear=False):
     """
     Central function to call LLM API and handle message management
     
@@ -176,7 +115,7 @@ def call_llm_api(message_content, clear=False):
             user_message = {"role": "user", "content": message_content}
             st.session_state.messages.append(user_message)
 
-        model = "openai/o4-mini"
+        # model = "openai/o4-mini"
         # model = "openai/o3"
         # model = "openai/gpt-4o-mini"
         # model = "openai/gpt-4.1"
@@ -299,10 +238,10 @@ def get_total_execution_cost():
     return df_costs, total
 
 def process_with_llm(df=None):
-    """Process the data with LLM using CSV format
+    """Process the data with LLM using CSV format or JSON format
     
     Parameters:
-    - df: If provided, creates a new conversation with the CSV data
+    - df: If provided, creates a new conversation with the data
     
     Returns the latest response from the LLM
     """
@@ -313,13 +252,20 @@ def process_with_llm(df=None):
     if df is None and st.session_state.df_one_hot is not None:
         df = st.session_state.df_one_hot
     
-    # If df is provided, start a new conversation with CSV data
+    # If df is provided, start a new conversation with data
     if df is not None:
-        # Convert dataframe to CSV string
-        csv_text = dataframe_to_csv_string(df)
-        
-        # Fill the prompt template with our CSV data
-        filled_prompt = prompts["analysis_prompt"].format(data=csv_text)
+        # Check if we have JSON data already processed
+        if hasattr(st.session_state, 'json_data') and st.session_state.json_data:
+            # Use JSON data for better structure and context
+            import json
+            json_str = json.dumps(st.session_state.json_data, ensure_ascii=False, indent=2)
+            
+            # Fill the prompt template with our JSON data
+            filled_prompt = prompts["analysis_prompt"].format(data=json_str)
+        else:
+            # Fallback to CSV format if JSON is not available
+            csv_text = dataframe_to_csv_string(df)
+            filled_prompt = prompts["analysis_prompt"].format(data=csv_text)
         
         # Call the LLM API with a cleared message history
         return call_llm_api(filled_prompt, clear=True)
@@ -328,18 +274,27 @@ def process_with_llm(df=None):
     return "No data provided for analysis."
 
 def generate_summary():
-    """Generate a summary from the analysis"""
+    """Generate a summary directly from JSON data"""
     # Load prompts
     prompts = load_prompts()
     
     # Get company name from session state
     company_name = st.session_state.company_name if 'company_name' in st.session_state else ""
     
-    # Fill the prompt template with company name
-    filled_prompt = prompts["summary_prompt"].format(company_name=company_name)
+    # Check if we have JSON data
+    if hasattr(st.session_state, 'json_data') and st.session_state.json_data:
+        # Use JSON data for direct analysis
+        import json
+        json_str = json.dumps(st.session_state.json_data, ensure_ascii=False, indent=2)
+        
+        # Fill the prompt template with our data and company name
+        filled_prompt = prompts["summary_prompt"].format(company_name=company_name, json_data=json_str)
+    else:
+        # Fallback to just company name if no data is available
+        filled_prompt = prompts["summary_prompt"].format(company_name=company_name)
     
     # Call LLM API with the summary prompt
-    summary_content = call_llm_api(filled_prompt)
+    summary_content = call_llm_api(filled_prompt, model='openai/gpt-4.1-mini')
     
     # Store summary result
     st.session_state.summary_result = summary_content
@@ -374,11 +329,11 @@ def verify_summary():
     prompts = load_prompts()
     
     # Check if we have both analysis_result and summary_result
-    if not st.session_state.analysis_result or not st.session_state.summary_result:
+    if not st.session_state.summary_result:
         return "No hay datos disponibles para la verificación."
     
     # Get the data from session state
-    questions_data = st.session_state.analysis_result
+    questions_data = st.session_state.json_data
     summary_text = st.session_state.summary_result
     
     # Fill the prompt template with the data
@@ -388,7 +343,7 @@ def verify_summary():
     )
     
     # Call the LLM API (reusing the existing function)
-    verification_result = call_llm_api(filled_prompt)
+    verification_result = call_llm_api(filled_prompt, model='openai/o3')
     
     # Store the result in session state
     st.session_state.verification_result = verification_result
@@ -526,20 +481,30 @@ def main():
             tmp.write(uploaded_file.getvalue())
             st.session_state.temp_file_path = tmp.name
         
-        # Process with one-hot encoding using the original function
+        # Process with one-hot encoding using the new SurveyMonkeyConverter class
         with st.spinner("Processing CSV data..."):
-            st.session_state.df_one_hot = load_surveymonkey_one_hot(st.session_state.temp_file_path)
-            st.success(f"Processed {st.session_state.df_one_hot.shape[0]} rows with {st.session_state.df_one_hot.shape[1]} features")
-        
-        # Show a preview of the data
-        with st.expander("Preview of One-Hot Encoded Data"):
-            st.dataframe(st.session_state.df_one_hot)
+            st.session_state.df_one_hot = SurveyMonkeyConverter.load_surveymonkey_one_hot(st.session_state.temp_file_path)
+            json_data = SurveyMonkeyConverter.one_hot_df_to_json(st.session_state.df_one_hot)
+            st.session_state.json_data = json_data
+            
+            # Count questions and answers for success message
+            if json_data and len(json_data) > 0:
+                total_questions = len(json_data[0]) 
+                total_respondents = len(json_data)
+            else:
+                total_questions = 0
+                total_respondents = 0
+            
+            with st.expander("Preview of JSON data"):
+                st.json(json_data)
+                
+            st.success(f"Identified {total_questions} questions from {total_respondents} survey responses.")
         
         # Process with LLM button
         if st.button("Analyze Data"):
             with st.spinner("Analyzing data..."):
                 # Process data with first prompt
-                st.session_state.analysis_result = process_with_llm(df=st.session_state.df_one_hot)
+                # st.session_state.analysis_result = process_with_llm(df=st.session_state.df_one_hot)
                 
                 # Process with second prompt (redaction)
                 # st.session_state.redaction_result = generate_redaction()
@@ -548,13 +513,12 @@ def main():
                 st.session_state.summary_result = generate_summary()
     
     # Display results in tabs
-    if hasattr(st.session_state, 'analysis_result') and st.session_state.analysis_result:
+    if hasattr(st.session_state, 'summary_result') and st.session_state.summary_result:
         tab1, tab2 = st.tabs(["Analysis Results", "Chat Interface"])
         
         with tab1:
             # First prompt result (collapsed)
             with st.expander("Detailed Analysis"):
-                st.markdown(st.session_state.analysis_result)
                 
                 # Add cost table
                 st.markdown("### API Call Costs")

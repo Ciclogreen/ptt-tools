@@ -2,3 +2,5 @@ test_one-hot.ipynb
 test_one-hot ALL.ipynb
 csv/**
 .streamlit/secrets.toml
+__pycache__/**
+docs/**

@@ -54,57 +54,6 @@ analysis_prompt: |
   DATA:
   {data}
 
-analysis_prompt_bk: |
-  You are a deterministic CSV-to-text transformer.  
-  Your ONLY duty is to convert a single one-hot-encoded CSV row into a JSON array where each element contains a `question` and its declarative `answer`. **Never guess, explain, recommend, or reorder anything.**
-
-  ## 1 INPUT  
-  • `csv_data`: header row + one data row.  
-  • Column patterns:  
-    ─ `question`                         = free-text prompt  
-    ─ `question___<option>`              = 1 → option selected, 0 → not selected  
-    ─ `question___other_text`            = free text when “other” is selected  
-
-  ## 2 PRE-PROCESSING  
-  • Discard any header that **ends with `__nan`** (e.g., `respondent_id__nan`).  
-  • For every remaining header:  
-    – Convert *snake_case* to readable text (replace “_” with “ ”, capitalize first word).  
-  • Apply the same de-snaking to answer values.
-
-  ## 3 CONVERSION RULES  
-  1. Preserve original question order (CSV header left→right).  
-  2. For each question:  
-    a. **Skip** if no option flag is `1` **and** no free-text value exists.  
-    b. Build an object:  
-        "index": <index, start 1>,
-        "question": "<question_text>",
-        "answer": "<declarative_answer>"
-    c. Determine `<declarative_answer>`:  
-        – **Single choice**   → the chosen option text.  
-        – **Multiple choices**  → `Selected: ` followed by the chosen option texts in source order, separated by “, ”, Remember is in one-hot encoding format, so, ignore if a column is 0.  
-        – **Option “other”**   → append ` — <other_text>` after the option list.  
-        – **Only free-text column present** → that text alone.  
-  3. Return a **JSON array** of these objects, in the original question order.
-  4. Output **nothing else**—no bullets, no commentary, no extra fields.  
-  5. Be token-efficient; avoid filler words.
-
-  ## 4 INTERNAL CHECKLIST (not in output)  
-  - Strip ignored headers. 
-  - Map headers once, cache flags.  
-  - De-snake questions & answers.
-  - Emit only existing data.  
-  - Zero creativity; 100 % fidelity.
-  - Keep the order of the questions as they appear in the CSV.
-
-  IMPORTANT: CSV is on one-hot encoding format, so, ignore if a column is 0.
-
-  IMPORTANT 2: You must extract all questions. Don't skip any question.
-
-  5 CSV CONTENT:
-  {data}
-
-  Think step by step
-
 
 summary_prompt: |
   You are **CenterNarrator**, a strict text-generation agent.  
@@ -138,35 +87,11 @@ summary_prompt: |
   Verify that every non-empty answer appears exactly once in the narrative and strictly in the sequence and orderprovided by the input JSON.
   If any answer aren't in the right order, fix it.
 
+  json_data:
+  {json_data}
+
   Think step by step
 
-redaction_prompt: |
-  IMPORTANT – UNDER NO CIRCUMSTANCES SHOULD YOU INVENT, ESTIMATE, OR “IMPROVE” ANY DATA. USE ONLY THE VALUES THAT APPEAR IN THE CSV. IF A VALUE IS MISSING, LEAVE IT BLANK OR WRITE “Información no disponible”.
-
-  Context  
-  You are a technical writer generating plain-language workplace descriptions from a **one-hot-encoded CSV** file.  
-  • Each **row** represents one worksite.  
-  • **Numeric columns** (e.g., `employee_count`, `car_spaces`) contain magnitudes.  
-  • **Boolean one-hot columns** follow the pattern `feature_<CATEGORY>` with values 1 or 0, where **1** means the feature applies.  
-  • Column names use snake_case Spanish.
-
-  Task  
-  1. Loop over every row of the CSV.  
-  2. For each row, convert one-hot columns that equal **1** into human-readable phrases (e.g., `building_type_office = 1 → tipo de edificio: oficina`). Ignore columns whose value is 0.  
-  3. Compose one concise, declarative paragraph **in Spanish** reporting **all** available data in this order:  
-    • Identidad del centro (nombre, código).  
-    • Ubicación (dirección, ciudad, región, país).  
-    • Censo laboral (número total de trabajadores, distribución por turnos si está en columnas).  
-    • Infraestructura de aparcamiento (plazas de coche, moto, bici, patinete, cargadores, etc.).  
-    • Servicios internos (vestuarios, comedor, salas de reuniones, cualquier booleano = 1).  
-    • Políticas o beneficios de movilidad (renting, tarjeta transporte, kilometraje, app taxi, etc.).  
-  4. Use simple sentences separated by semicolons or periods to keep it readable but compact.  
-  5. Maintain a **neutral, factual tone**; do **not** evaluate, recommend, or summarise.  
-  6. After the paragraph for a site, output one blank line to separate it from the next site.  
-  7. Do **not** perform any calculations, averages, or percentages unless the exact figure appears as a numeric column.
-
-  Output example (structure only – real values come from the CSV)
-  Centro Alfa, ubicado en Calle X n.º 12, Sevilla (Andalucía, España), emplea a 250 personas; cuenta con 120 plazas de coche, 15 de moto y 4 cargadores eléctricos; dispone de comedor corporativo, vestuarios con duchas y servicio de cafetería; ofrece renting de vehículos y tarjeta de transporte.
 
 verification_prompt: |
   You are **QualityChecker**, un agente de verificación que debe analizar la salida del summary y los datos originales para garantizar su precisión y orden.
@@ -211,3 +136,76 @@ verification_prompt: |
   questions_data: {questions_data}
 
   summary_text: {summary_text}
+
+
+mobility_report_prompt: |
+ You are a technical writer producing section Mobility-demand analysis for a corporate Workplace Transport & Mobility Plan.
+
+  ## Inputs
+  You receive one JSON document called calculations:
+  Each name matches a calculation label listed below; each value is the exact, verified result already computed by analysts.
+
+  ## Structure to Produce (all sections are mandatory)
+
+  ### Introducción
+  - Comienza presentando el método utilizado para recopilar la información (encuesta al personal).  
+  - Describe la estructura de la encuesta y el tiempo medio de cumplimentación (7 min).  
+  - Explica, de forma general, las acciones de difusión (correo electrónico, cartelería con código QR, sala habilitada).  
+  - Menciona la evaluación del alcance y el relanzamiento para aumentar la participación.  
+  - Cierra con un resumen del nivel de participación logrado y su representatividad.  
+
+  ### Datos generales
+  - Expone el patrón residencial destacando los municipios más frecuentes.  
+  - Presenta la distribución por género.  
+  - Señala el grupo de edad predominante.  
+  - Describe la condición laboral mayoritaria.  
+  - Resume la frecuencia de teletrabajo.  
+
+  ### Tu viaje habitual al trabajo
+  - Declara el reparto modal de los desplazamientos.  
+  - Cuando exista combinación de medios, indica la prevalencia del coche sin acompañante.  
+  - Detalla las distancias diarias recorridas por bandas.  
+  - Informa de los tiempos de viaje de ida y vuelta.  
+  - Cuantifica los desplazamientos en misión: incidencia, frecuencias y modos empleados.  
+
+  ### Coche y moto
+  - Introduce el análisis de quienes usan vehículo privado para acudir al trabajo.  
+  - Desglosa los tipos de motor presentes en la flota.  
+  - Indica la intención futura de adquirir vehículos eléctricos.  
+  - Describe las condiciones de estacionamiento y la percepción de problemas.  
+  - Presenta las barreras declaradas al uso de la bicicleta.  
+  - Resume las barreras al transporte público.  
+
+  ### Transporte público
+  - Señala la finalidad de esta subsección: caracterizar a quienes usan transporte público de forma habitual.  
+  - Muestra la puntuación media de satisfacción del servicio.  
+  - Enumera los principales motivos de elección.  
+
+  ### Mejora de la movilidad
+  - Introduce el foco en la predisposición al cambio y en las medidas prioritarias.  
+  - Introduce el foco en la predisposición al cambio y en las medidas prioritarias.  
+  - Cuantifica la disposición y la práctica actual de coche compartido.  
+  - Resume las barreras percibidas para compartir coche, destacando la coordinación de horarios como obstáculo principal.  
+  - Ordena las medidas que harían más atractivo el coche compartido: incentivos, aplicación móvil y otras propuestas.  
+  - Indica el conocimiento de líneas de transporte público existentes.  
+  - Expone las prioridades de mejora del transporte público.  
+  - Presenta el grado de conocimiento de vías ciclistas y las mejoras deseadas en incentivos, infraestructura e instalaciones.  
+  - Comunica la valoración del entorno peatonal.  
+  - Concluye con una síntesis de las propuestas abiertas, si está disponible.  
+
+  ## Internal checklist
+  - The output must be a redaction in smooth, professional Spanish without inventing or inferring any information.
+  - Preserve the exact order of questions.
+  - Do not use bullets, numbering, or any metadata—only narrative text.
+  - Do NOT add, infer, interpret, recommend, or omit content.
+  
+  ## Calculations:
+  {analysis_results}
+
+mobility_report_prompt_bk: |  
+  - Introduction : state survey scope, methodology and representativeness using the values supplied.
+  - General Data : profile the workforce (residence, gender, age, work schedule, telework frequency).
+  - Usual Trip to Work : describe modal split, multimodality, distances, travel times and mission trips.
+  - Car and Motorcycle : detail engine types, parking, intended EV uptake and barriers to mode change.
+  - Public Transport : summarise satisfaction level and reasons for choosing public transport.
+  - Mobility Improvement : highlight willingness to car-share and priority measures to foster sustainable modes.
