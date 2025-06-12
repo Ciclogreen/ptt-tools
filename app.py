@@ -13,15 +13,15 @@ st.title("Herramientas de Análisis de Encuestas PTT")
 st.markdown("""
 ## Bienvenido a la plataforma de análisis de encuestas de movilidad
 
-Esta herramienta permite procesar y analizar datos de encuestas relacionadas con movilidad 
-y transporte para generar información valiosa para la planificación urbana.
+Estas herramientas permiten procesar y analizar datos de encuestas para plannes de 
+transporte y movilidad al trabajo.
 
 ### Funcionalidades disponibles:
 
 **Navegue por el menú lateral para acceder a las herramientas:**
 
-* **Categorización de Centro** - Analiza respuestas para clasificar centros según sus características
-* **Análisis de Demanda de Movilidad** - Procesa encuestas de movilidad
+* **Categorización de Centro** - Procesa encuestas de movilidad de gestores
+* **Análisis de Demanda de Movilidad** - Procesa encuestas de movilidad de empleados
 
 """)
 

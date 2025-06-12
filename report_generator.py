@@ -281,3 +281,145 @@ class ReportGenerator:
             'missing_data': [],
             'inconsistencies': []
         }
+        
+    def generate_analysis(self, data: Any, clear_messages: bool = True) -> str:
+        """
+        Genera un análisis de los datos proporcionados usando el modelo LLM.
+        
+        Args:
+            data: Datos para analizar, puede ser un DataFrame o datos JSON
+            clear_messages: Si debe limpiar el historial de mensajes antes de la nueva solicitud
+            
+        Returns:
+            El contenido del análisis generado
+        """
+        try:
+            # Cargar plantillas de prompts
+            prompts = self.prompts
+            
+            # Preparar los datos según su formato
+            if hasattr(data, 'to_csv'):  # Si es un DataFrame
+                import io
+                csv_buffer = io.StringIO()
+                data.to_csv(csv_buffer, index=False)
+                data_str = csv_buffer.getvalue()
+                filled_prompt = prompts.get("analysis_prompt", "").format(data=data_str)
+            elif isinstance(data, (list, dict)):  # Si son datos JSON
+                import json
+                json_str = json.dumps(data, ensure_ascii=False, indent=2)
+                filled_prompt = prompts.get("analysis_prompt", "").format(data=json_str)
+            else:
+                filled_prompt = prompts.get("analysis_prompt", "").format(data=str(data))
+            
+            # Llamar a la API de LLM
+            analysis_content, call_cost = self._call_llm_api(filled_prompt)
+            
+            # Actualizar seguimiento de costos
+            self._track_cost(call_cost, "analysis_generation")
+            
+            return analysis_content
+            
+        except Exception as e:
+            logger.error(f"Error al generar análisis: {e}")
+            return f"Error al generar análisis: {e}"
+            
+    def generate_summary(self, json_data: Any = None, company_name: str = "") -> Tuple[str, float]:
+        """
+        Genera un resumen a partir de datos JSON y el nombre de la empresa.
+        
+        Args:
+            json_data: Datos en formato JSON para generar el resumen
+            company_name: Nombre de la empresa
+            
+        Returns:
+            Tupla con (texto_del_resumen, costo_de_generación)
+        """
+        try:
+            # Cargar plantillas de prompts
+            prompts = self.prompts
+            
+            # Preparar el prompt
+            if json_data:
+                import json
+                json_str = json.dumps(json_data, ensure_ascii=False, indent=2)
+                filled_prompt = prompts.get("summary_prompt", "").format(
+                    company_name=company_name, 
+                    json_data=json_str
+                )
+            else:
+                # Fallback si no hay datos disponibles
+                filled_prompt = prompts.get("summary_prompt", "").format(
+                    company_name=company_name,
+                    json_data="{}"
+                )
+            
+            # Llamar a la API de LLM
+            summary_content, call_cost = self._call_llm_api(filled_prompt)
+            
+            # Actualizar seguimiento de costos
+            self._track_cost(call_cost, "summary_generation")
+            
+            return summary_content, call_cost
+            
+        except Exception as e:
+            logger.error(f"Error al generar resumen: {e}")
+            return f"Error al generar resumen: {e}", 0.0
+            
+    def generate_redaction(self) -> Tuple[str, float]:
+        """
+        Genera una redacción a partir del análisis previo.
+        
+        Returns:
+            Tupla con (texto_de_redacción, costo_de_generación)
+        """
+        try:
+            # Cargar plantillas de prompts
+            prompts = self.prompts
+            
+            # Preparar el prompt
+            filled_prompt = prompts.get("redaction_prompt", "")
+            
+            # Llamar a la API de LLM
+            redaction_content, call_cost = self._call_llm_api(filled_prompt)
+            
+            # Actualizar seguimiento de costos
+            self._track_cost(call_cost, "redaction_generation")
+            
+            return redaction_content, call_cost
+            
+        except Exception as e:
+            logger.error(f"Error al generar redacción: {e}")
+            return f"Error al generar redacción: {e}", 0.0
+            
+    def verify_summary(self, questions_data: Any, summary_text: str) -> Tuple[str, float]:
+        """
+        Verifica la calidad del resumen comparándolo con los datos originales.
+        
+        Args:
+            questions_data: Datos originales de las preguntas
+            summary_text: Texto del resumen a verificar
+            
+        Returns:
+            Tupla con (resultado_de_verificación, costo_de_verificación)
+        """
+        try:
+            # Cargar plantillas de prompts
+            prompts = self.prompts
+            
+            # Preparar el prompt
+            filled_prompt = prompts.get("verification_prompt", "").format(
+                questions_data=questions_data,
+                summary_text=summary_text
+            )
+            
+            # Llamar a la API de LLM con un modelo más pequeño para economizar
+            verification_result, call_cost = self._call_llm_api(filled_prompt)
+            
+            # Actualizar seguimiento de costos
+            self._track_cost(call_cost, "summary_verification")
+            
+            return verification_result, call_cost
+            
+        except Exception as e:
+            logger.error(f"Error al verificar resumen: {e}")
+            return f"Error al verificar resumen: {e}", 0.0
