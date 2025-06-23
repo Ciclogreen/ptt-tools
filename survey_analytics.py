@@ -180,26 +180,19 @@ class SurveyAnalytics:
             # Creamos un mapa de option_id a option_text (código postal)
             option_map = {opt['id']: opt['option_text'] for opt in options.data}
             
-            # Obtenemos todas las respuestas para esta compañía
-            answers = self.supabase.table('answers').select('option_id').eq('company_id', self.company_id).execute()
+            # SOLUCIÓN: En lugar de obtener todas las respuestas y luego filtrar,
+            # inicializamos los contadores para cada opción
+            postal_counts = {option_text: 0 for option_text in option_map.values()}
             
-            if not answers.data:
-                return {
-                    "name": "Distribución por código postal",
-                    "error": "No hay respuestas para la pregunta de código postal"
-                }
-            
-            # Contamos manualmente las respuestas por código postal
-            postal_counts = {}
-            for answer in answers.data:
-                option_id = answer['option_id']
-                # Solo procesamos si el option_id pertenece a la pregunta de código postal
-                if option_id in option_map:
-                    postal_code = option_map[option_id]
-                    if postal_code in postal_counts:
-                        postal_counts[postal_code] += 1
-                    else:
-                        postal_counts[postal_code] = 1
+            # Procesar cada opción individualmente para evitar el límite de 1000 registros
+            for option_id, option_text in option_map.items():
+                # Obtener el conteo exacto de respuestas para esta opción
+                count_result = self.supabase.table('answers') \
+                    .select('id', count='exact') \
+                    .eq('option_id', option_id) \
+                    .eq('company_id', self.company_id) \
+                    .execute()
+                postal_counts[option_text] = count_result.count
             
             # Calcular total de respuestas válidas
             total_valid_responses = sum(postal_counts.values())
@@ -273,6 +266,8 @@ class SurveyAnalytics:
             # 1. First, find the age question by searching for keywords
             questions = self.supabase.table('questions').select('id', 'question_text').eq('company_id', self.company_id).execute()
             
+            print(f"DEBUG: Total number of questions for company {self.company_id}: {len(questions.data)}")
+            
             age_question_id = None
             age_question_text = ""
             
@@ -283,6 +278,7 @@ class SurveyAnalytics:
                 if any(keyword in question_text for keyword in age_keywords):
                     age_question_id = question['id']
                     age_question_text = question['question_text']
+                    print(f"DEBUG: Found age question: ID={age_question_id}, Text='{age_question_text}'")
                     break
             
             if not age_question_id:
@@ -294,6 +290,8 @@ class SurveyAnalytics:
             # 2. Get all options for the age question
             options = self.supabase.table('options').select('id', 'option_text').eq('question_id', age_question_id).eq('company_id', self.company_id).execute()
             
+            print(f"DEBUG: Found {len(options.data)} options for age question")
+            
             if not options.data:
                 return {
                     "name": "Distribución por edad",
@@ -302,30 +300,31 @@ class SurveyAnalytics:
             
             # Create map of option_id to option_text (age range)
             option_map = {opt['id']: opt['option_text'] for opt in options.data}
+            print(f"DEBUG: Option map: {option_map}")
             
-            # 3. Get all answers filtered by company_id
-            answers = self.supabase.table('answers').select('option_id').eq('company_id', self.company_id).execute()
+            # MODIFICACIÓN: En lugar de obtener todas las respuestas y luego filtrar,
+            # obtenemos directamente solo las respuestas para las opciones de la pregunta de edad
+            option_ids = list(option_map.keys())
             
-            if not answers.data:
-                return {
-                    "name": "Distribución por edad",
-                    "error": "No hay respuestas para la pregunta de edad"
-                }
+            # Inicializar contadores
+            age_counts = {option_text: 0 for option_text in option_map.values()}
             
-            # Count responses by age range
-            age_counts = {}
-            for answer in answers.data:
-                option_id = answer['option_id']
-                # Only process if the option_id belongs to the age question
-                if option_id in option_map:
-                    age_range = option_map[option_id]
-                    if age_range in age_counts:
-                        age_counts[age_range] += 1
-                    else:
-                        age_counts[age_range] = 1
+            # Procesar cada opción individualmente para evitar el límite de 1000 registros
+            for option_id, option_text in option_map.items():
+                # Obtener el conteo exacto de respuestas para esta opción
+                count_result = self.supabase.table('answers') \
+                    .select('id', count='exact') \
+                    .eq('option_id', option_id) \
+                    .eq('company_id', self.company_id) \
+                    .execute()
+                age_counts[option_text] = count_result.count
+                print(f"DEBUG: Option '{option_text}' has {count_result.count} responses")
+            
+            print(f"DEBUG: Age counts after processing: {age_counts}")
             
             # Calculate total valid responses
             total_valid_responses = sum(age_counts.values())
+            print(f"DEBUG: Total valid responses: {total_valid_responses}")
             
             if total_valid_responses == 0:
                 return {
@@ -336,7 +335,9 @@ class SurveyAnalytics:
             # Calculate percentages
             age_percentages = {}
             for age_range, count in age_counts.items():
-                age_percentages[age_range] = round((count / total_valid_responses) * 100, 2)
+                percent = round((count / total_valid_responses) * 100, 2)
+                age_percentages[age_range] = percent
+                print(f"DEBUG: {age_range}: {count} responses = {percent}%")
             
             # Sort age ranges if possible (try to extract numeric values from the ranges)
             try:
@@ -405,26 +406,22 @@ class SurveyAnalytics:
             # Create map of option_id to option_text
             option_map = {opt['id']: opt['option_text'] for opt in options.data}
             
-            # 3. Get all answers filtered by company_id
-            answers = self.supabase.table('answers').select('option_id').eq('company_id', self.company_id).execute()
+            # MODIFICACIÓN: En lugar de obtener todas las respuestas y luego filtrar,
+            # obtenemos directamente solo las respuestas para las opciones de la pregunta de tipo de jornada
+            option_ids = list(option_map.keys())
             
-            if not answers.data:
-                return {
-                    "name": "Distribución por tipo de jornada",
-                    "error": "No hay respuestas para la pregunta de tipo de jornada"
-                }
+            # Inicializar contadores
+            workday_counts = {option_text: 0 for option_text in option_map.values()}
             
-            # Count responses by workday type
-            workday_counts = {}
-            for answer in answers.data:
-                option_id = answer['option_id']
-                # Only process if the option_id belongs to the workday question
-                if option_id in option_map:
-                    workday_type = option_map[option_id]
-                    if workday_type in workday_counts:
-                        workday_counts[workday_type] += 1
-                    else:
-                        workday_counts[workday_type] = 1
+            # Procesar cada opción individualmente para evitar el límite de 1000 registros
+            for option_id, option_text in option_map.items():
+                # Obtener el conteo exacto de respuestas para esta opción
+                count_result = self.supabase.table('answers') \
+                    .select('id', count='exact') \
+                    .eq('option_id', option_id) \
+                    .eq('company_id', self.company_id) \
+                    .execute()
+                workday_counts[option_text] = count_result.count
             
             # Calculate total valid responses
             total_valid_responses = sum(workday_counts.values())
@@ -500,26 +497,22 @@ class SurveyAnalytics:
             # Create map of option_id to option_text
             option_map = {opt['id']: opt['option_text'] for opt in options.data}
             
-            # 3. Get all answers filtered by company_id
-            answers = self.supabase.table('answers').select('option_id').eq('company_id', self.company_id).execute()
+            # MODIFICACIÓN: En lugar de obtener todas las respuestas y luego filtrar,
+            # obtenemos directamente solo las respuestas para las opciones de la pregunta de teletrabajo
+            option_ids = list(option_map.keys())
             
-            if not answers.data:
-                return {
-                    "name": "Distribución por días de teletrabajo",
-                    "error": "No hay respuestas para la pregunta de teletrabajo"
-                }
+            # Inicializar contadores
+            telework_counts = {option_text: 0 for option_text in option_map.values()}
             
-            # Count responses by telework days range
-            telework_counts = {}
-            for answer in answers.data:
-                option_id = answer['option_id']
-                # Only process if the option_id belongs to the telework question
-                if option_id in option_map:
-                    telework_range = option_map[option_id]
-                    if telework_range in telework_counts:
-                        telework_counts[telework_range] += 1
-                    else:
-                        telework_counts[telework_range] = 1
+            # Procesar cada opción individualmente para evitar el límite de 1000 registros
+            for option_id, option_text in option_map.items():
+                # Obtener el conteo exacto de respuestas para esta opción
+                count_result = self.supabase.table('answers') \
+                    .select('id', count='exact') \
+                    .eq('option_id', option_id) \
+                    .eq('company_id', self.company_id) \
+                    .execute()
+                telework_counts[option_text] = count_result.count
             
             # Calculate total valid responses
             total_valid_responses = sum(telework_counts.values())
@@ -619,26 +612,22 @@ class SurveyAnalytics:
             # Create map of option_id to option_text
             option_map = {opt['id']: opt['option_text'] for opt in options.data}
             
-            # 3. Get all answers filtered by company_id
-            answers = self.supabase.table('answers').select('option_id').eq('company_id', self.company_id).execute()
+            # MODIFICACIÓN: En lugar de obtener todas las respuestas y luego filtrar,
+            # obtenemos directamente solo las respuestas para las opciones de la pregunta de modo de transporte
+            option_ids = list(option_map.keys())
             
-            if not answers.data:
-                return {
-                    "name": "Distribución por modo de transporte",
-                    "error": "No hay respuestas para la pregunta de modo de transporte"
-                }
+            # Inicializar contadores
+            transport_counts = {option_text: 0 for option_text in option_map.values()}
             
-            # Count responses by transport mode
-            transport_counts = {}
-            for answer in answers.data:
-                option_id = answer['option_id']
-                # Only process if the option_id belongs to the transport mode question
-                if option_id in option_map:
-                    transport_mode = option_map[option_id]
-                    if transport_mode in transport_counts:
-                        transport_counts[transport_mode] += 1
-                    else:
-                        transport_counts[transport_mode] = 1
+            # Procesar cada opción individualmente para evitar el límite de 1000 registros
+            for option_id, option_text in option_map.items():
+                # Obtener el conteo exacto de respuestas para esta opción
+                count_result = self.supabase.table('answers') \
+                    .select('id', count='exact') \
+                    .eq('option_id', option_id) \
+                    .eq('company_id', self.company_id) \
+                    .execute()
+                transport_counts[option_text] = count_result.count
             
             # Calculate total valid responses
             total_valid_responses = sum(transport_counts.values())
@@ -801,8 +790,7 @@ class SurveyAnalytics:
                     "error": "No se encontró pregunta relacionada con combinación de transportes en la encuesta"
                 }
             
-            # 3. Get respondents who answered the multimodal question
-            # First get options for this question
+            # 3. Get all options for this question
             options = self.supabase.table('options').select('id').eq('question_id', multimodal_question_id).eq('company_id', self.company_id).execute()
             
             if not options.data:
@@ -811,19 +799,34 @@ class SurveyAnalytics:
                     "error": "No se encontraron opciones para la pregunta de combinación de transportes"
                 }
             
-            # Get the option IDs for this question
-            option_ids = [option['id'] for option in options.data]
+            # 4. SOLUCIÓN: En lugar de obtener todas las respuestas y procesar una por una,
+            # vamos a obtener un conteo de respondentes únicos para esta pregunta
             
-            # Get distinct respondents who answered this question
+            # Obtenemos directamente el conteo de respondentes únicos que respondieron esta pregunta
+            multimodal_count = 0
+            
+            # Usar un conjunto para rastrear respondentes únicos
             multimodal_respondents = set()
-            for option_id in option_ids:
-                answers = self.supabase.table('answers').select('respondent_id').eq('option_id', option_id).eq('company_id', self.company_id).execute()
+            
+            # Procesar cada opción individualmente para evitar el límite de 1000 registros
+            for option in options.data:
+                option_id = option['id']
+                # Para cada opción, obtenemos los respondent_id distintos
+                answers = self.supabase.table('answers') \
+                    .select('respondent_id') \
+                    .eq('option_id', option_id) \
+                    .eq('company_id', self.company_id) \
+                    .execute()
                 
+                # Añadir cada respondent_id al conjunto
                 for answer in answers.data:
                     multimodal_respondents.add(answer['respondent_id'])
             
             # Calculate number of multimodal workers
             multimodal_count = len(multimodal_respondents)
+            
+            # Guardar los IDs de respondentes multimodales para uso en otras fórmulas
+            self.mission_respondents = multimodal_respondents
             
             # Calculate percentage
             multimodal_percentage = round((multimodal_count / total_valid_responses) * 100, 2)
@@ -1029,9 +1032,8 @@ class SurveyAnalytics:
         try:
             # Primero, obtener todas las opciones para esta pregunta
             options = self.supabase.table('options').select('id').eq('question_id', question_id).eq('company_id', self.company_id).execute()
-            option_ids = [option['id'] for option in options.data]
             
-            if not option_ids:
+            if not options.data:
                 # Si no hay opciones, pueden ser respuestas directas
                 # Buscar respuestas directamente
                 answers = self.supabase.table('answers').select('respondent_id').eq('question_id', question_id).eq('company_id', self.company_id).execute()
@@ -1040,7 +1042,7 @@ class SurveyAnalytics:
             
             # Si hay opciones, contar respondentes únicos que contestaron a alguna opción
             unique_respondents = set()
-            for option_id in option_ids:
+            for option_id in [option['id'] for option in options.data]:
                 answers = self.supabase.table('answers').select('respondent_id').eq('option_id', option_id).eq('company_id', self.company_id).execute()
                 for answer in answers.data:
                     unique_respondents.add(answer['respondent_id'])
@@ -1331,7 +1333,7 @@ class SurveyAnalytics:
                     "error": "No se encontró ninguna pregunta relacionada con desplazamientos en misión"
                 }
             
-            # Obtener todas las opciones para esta pregunta (Sí/No)
+            # Obtener todas las opciones para esta pregunta
             options = self.supabase.table('options').select('id', 'option_text').eq('question_id', mission_question_id).eq('company_id', self.company_id).execute()
             
             # Contadores
@@ -1340,6 +1342,9 @@ class SurveyAnalytics:
             
             # Almacenar IDs de respondentes que realizan desplazamientos en misión
             mission_respondents = set()
+            
+            # SOLUCIÓN: En lugar de obtener todas las respuestas y procesarlas localmente,
+            # procesamos cada opción individualmente usando count='exact'
             
             # Si hay opciones predefinidas (típico para preguntas sí/no)
             if options.data:
@@ -1350,26 +1355,42 @@ class SurveyAnalytics:
                     # Identificar si es una respuesta afirmativa o negativa
                     is_affirmative = any(word in option_text for word in ['sí', 'si', 'yes', 'true', '1'])
                     
-                    # Contar las respuestas para esta opción
-                    answers = self.supabase.table('answers').select('respondent_id').eq('option_id', option['id']).eq('company_id', self.company_id).execute()
+                    # SOLUCIÓN: Contar las respuestas para esta opción usando count='exact'
+                    count_result = self.supabase.table('answers') \
+                        .select('id', count='exact') \
+                        .eq('option_id', option['id']) \
+                        .eq('company_id', self.company_id) \
+                        .execute()
                     
-                    # Procesar respuestas
-                    for answer in answers.data:
-                        if is_affirmative:
-                            yes_count += 1
-                            # Guardar el ID del respondente para uso en otras fórmulas
+                    answer_count = count_result.count
+                    
+                    # Si además de contar necesitamos los IDs de los respondentes para la opción afirmativa
+                    if is_affirmative and answer_count > 0:
+                        # Solo para las respuestas afirmativas necesitamos recoger los IDs para uso posterior
+                        answers = self.supabase.table('answers') \
+                            .select('respondent_id') \
+                            .eq('option_id', option['id']) \
+                            .eq('company_id', self.company_id) \
+                            .execute()
+                        
+                        # Guardar el ID del respondente para uso en otras fórmulas
+                        for answer in answers.data:
                             mission_respondents.add(answer['respondent_id'])
-                        else:
-                            no_count += 1
+                        
+                        yes_count = answer_count
+                    elif not is_affirmative:
+                        no_count = answer_count
             else:
                 # Si es una pregunta de texto libre, intentar analizar las respuestas directamente
+                # Nota: Para este caso, no podemos usar count='exact' directamente ya que necesitamos
+                # analizar el texto de cada respuesta
                 answers = self.supabase.table('answers').select('response_value', 'respondent_id').eq('question_id', mission_question_id).eq('company_id', self.company_id).execute()
                 unique_respondents = set()
                 
                 for answer in answers.data:
                     if answer['respondent_id'] in unique_respondents:
                         continue
-                    
+                        
                     unique_respondents.add(answer['respondent_id'])
                     response_text = answer['response_value'].lower().strip()
                     
@@ -1802,7 +1823,9 @@ class SurveyAnalytics:
                     else:
                         unsure_count += count
                 
-                    # Añadir los respondentes
+                # Obtener el total de respuestas a esta pregunta
+                for option in options.data:
+                    answers = self.supabase.table('answers').select('respondent_id').eq('option_id', option['id']).eq('company_id', self.company_id).execute()
                     for answer in answers.data:
                         respondents.add(answer['respondent_id'])
                         
@@ -2835,8 +2858,7 @@ class SurveyAnalytics:
             # Calcular porcentajes para cada factor
             percentages = {}
             for factor, count in factor_counts.items():
-                percentage = (count / total_mentions) * 100
-                percentages[factor] = round(percentage, 2)
+                percentages[factor] = round((count / total_mentions) * 100, 2)
             
             # Ordenar factores por porcentaje (de mayor a menor)
             sorted_percentages = {k: v for k, v in sorted(percentages.items(), key=lambda item: item[1], reverse=True)}
@@ -3070,6 +3092,7 @@ class SurveyAnalytics:
                     
                     # Count answers for this option
                     answers = self.supabase.table('answers').select('respondent_id').eq('option_id', option_id).eq('company_id', self.company_id).execute()
+                    
                     for answer in answers.data:
                         respondents.add(answer['respondent_id'])
                         factors_count[factor_text] += 1

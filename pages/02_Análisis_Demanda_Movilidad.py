@@ -29,6 +29,10 @@ def init_session_state():
     # Inicializar informe generado
     if 'mobility_report' not in st.session_state:
         st.session_state.mobility_report = None
+        
+    # Inicializar resultado de verificación
+    if 'mobility_verification_result' not in st.session_state:
+        st.session_state.mobility_verification_result = None
 
 # Función para realizar análisis (código común entre ambos botones)
 def perform_analysis(company_name, total_employees, company_id, supabase, status, json_data=None):
@@ -127,8 +131,19 @@ def perform_analysis(company_name, total_employees, company_id, supabase, status
         
         if report:
             st.session_state.mobility_report = report
-            status.update(label=f"✅ Análisis completado. Costo total: ${cost:.5f}", state="complete", expanded=False)
-            return True, analysis_results, cost
+            
+            # Verificar la calidad del informe
+            st.write("🔍 Verificando la calidad del informe...")
+            verification_result, verification_cost = generator.verify_mobility_report(
+                analysis_results,
+                report
+            )
+            st.session_state.mobility_verification_result = verification_result
+            
+            # Actualizar costo total
+            total_cost = cost + verification_cost
+            status.update(label=f"✅ Análisis completado. Costo total: ${total_cost:.5f}", state="complete", expanded=False)
+            return True, analysis_results, total_cost
         else:
             status.update(label="❌ Error al generar informe", state="error")
             return False, None, 0
@@ -292,6 +307,11 @@ def display_results_in_tabs(analysis_results):
     # Pestaña 1: Informe generado
     with tab1:
         st.markdown(st.session_state.mobility_report)
+        
+        # Mostrar resultado de verificación si está disponible
+        st.markdown("## ✅ Verificación")
+        if 'mobility_verification_result' in st.session_state and st.session_state.mobility_verification_result:
+            st.markdown(st.session_state.mobility_verification_result)
     
     # Pestaña 2: JSON de resultados
     with tab2:

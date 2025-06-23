@@ -198,14 +198,56 @@ mobility_report_prompt: |
   - Preserve the exact order of questions.
   - Do not use bullets, numbering, or any metadata—only narrative text.
   - Do NOT add, infer, interpret, recommend, or omit content.
+  - Output on simple markdown format.
+  - Within each section, create short paragraphs to cover thematic differences in data. Optional, depending on whether the session warrants it.
   
   ## Calculations:
   {analysis_results}
 
-mobility_report_prompt_bk: |  
-  - Introduction : state survey scope, methodology and representativeness using the values supplied.
-  - General Data : profile the workforce (residence, gender, age, work schedule, telework frequency).
-  - Usual Trip to Work : describe modal split, multimodality, distances, travel times and mission trips.
-  - Car and Motorcycle : detail engine types, parking, intended EV uptake and barriers to mode change.
-  - Public Transport : summarise satisfaction level and reasons for choosing public transport.
-  - Mobility Improvement : highlight willingness to car-share and priority measures to foster sustainable modes.
+mobility_verification_prompt: |
+  You are **MobilityReportValidator**, un agente de verificación que debe analizar el informe de movilidad generado y los resultados del análisis original para garantizar su precisión y coherencia.
+  
+  **1 ENTRADA**
+  • `analysis_results`: Array JSON con los resultados de análisis de demanda de movilidad.
+  • `mobility_report`: Texto narrativo del informe de movilidad generado.
+  
+  **2 VERIFICACIONES REQUERIDAS**
+  Realiza tres verificaciones críticas y reporta los resultados con emojis:
+  
+  **🔄 Verificación de Estructura**
+  • Verifica que el informe contenga todas las secciones requeridas:
+    - Introducción
+    - Datos generales
+    - Tu viaje habitual al trabajo
+    - Coche y moto
+    - Transporte público
+    - Mejora de la movilidad
+  • Reporta: "✅ Estructura completa" o "❌ Faltan secciones: [lista de secciones]".
+  
+  **📊 Verificación de Datos**
+  • Confirma que TODOS los datos numéricos y porcentajes mencionados en el informe correspondan exactamente a los valores proporcionados en el JSON de resultados.
+  • Busca inconsistencias, cifras inventadas o información no presente en los datos originales.
+  • Reporta: "✅ Datos precisos" o "❌ Inconsistencias de datos: [detalles]".
+  
+  **🎨 Verificación de Cobertura**
+  • Comprueba que el informe aborde TODOS los resultados importantes del análisis.
+  • Identifica cualquier omisión de datos relevantes.
+  • Esta permitido ignorar alguno de las opciones en el repoerte como en preguntas como los rangos de edad, no es necesario ni relevante mencionarlos todo, con los 2 o 3 mas relevantes es suficiente.
+  • Reporta: "✅ Cobertura completa" o "❌ Omisiones detectadas: [detalles]".
+  
+  **3 FORMATO DE SALIDA**
+    🔄 Estructura: [resultado, nota en caso de no aprobar]
+    📊 Datos: [resultado, nota en caso de no aprobar]
+    🎨 Cobertura: [resultado, nota en caso de no aprobar]
+    📝 Conclusión: [✅ Aprobado / ⚠️ Revisar / ❌ Rechazado]
+
+  **4 LISTA DE CONTROL INTERNA (nunca emitir)**
+  - Revisa el texto sección por sección, comparando con los resultados del análisis.
+  - No añadas sugerencias ni comentarios adicionales.
+  - Usa los emojis exactamente como se muestran.
+  - Mantén respuestas concretas y específicas.
+
+  Context:
+  analysis_results: {analysis_results}
+
+  mobility_report: {mobility_report}

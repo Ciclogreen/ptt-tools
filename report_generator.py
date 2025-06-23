@@ -423,3 +423,41 @@ class ReportGenerator:
         except Exception as e:
             logger.error(f"Error al verificar resumen: {e}")
             return f"Error al verificar resumen: {e}", 0.0
+
+    def verify_mobility_report(self, analysis_results: List[Dict[str, Any]], mobility_report: str) -> Tuple[str, float]:
+        """
+        Verifica la calidad del informe de movilidad comparándolo con los resultados del análisis original.
+        
+        Args:
+            analysis_results: Resultados del análisis original
+            mobility_report: Texto del informe de movilidad a verificar
+            
+        Returns:
+            Tupla con (resultado_de_verificación, costo_de_verificación)
+        """
+        try:
+            # Cargar plantillas de prompts
+            prompts = self.prompts
+            
+            # Formatear los resultados del análisis para el prompt
+            formatted_results = json.dumps(analysis_results, ensure_ascii=False, indent=2)
+            
+            # Preparar el prompt, utilizando mobility_verification_prompt si existe, o verification_prompt como fallback
+            prompt_template = prompts.get("mobility_verification_prompt", prompts.get("verification_prompt", ""))
+            
+            filled_prompt = prompt_template.format(
+                analysis_results=formatted_results,
+                mobility_report=mobility_report
+            )
+            
+            # Llamar a la API de LLM
+            verification_result, call_cost = self._call_llm_api(filled_prompt)
+            
+            # Actualizar seguimiento de costos
+            self._track_cost(call_cost, "mobility_report_verification")
+            
+            return verification_result, call_cost
+            
+        except Exception as e:
+            logger.error(f"Error al verificar informe de movilidad: {e}")
+            return f"Error al verificar informe de movilidad: {e}", 0.0
