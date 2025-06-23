@@ -232,7 +232,7 @@ mobility_verification_prompt: |
   **🎨 Verificación de Cobertura**
   • Comprueba que el informe aborde TODOS los resultados importantes del análisis.
   • Identifica cualquier omisión de datos relevantes.
-  • Esta permitido ignorar alguno de las opciones en el repoerte como en preguntas como los rangos de edad, no es necesario ni relevante mencionarlos todo, con los 2 o 3 mas relevantes es suficiente.
+  • Esta permitido ignorar alguno de las opciones en el repoerte como en preguntas como los rangos de edad, no es necesario ni relevante mencionarlos todo, con los 2 o 3 mas relevantes es suficiente. Pero es obligatorio mostrar todos los valores para la pregunta de "principal medio de transporte" o tambien llamado reparto modal.
   • Reporta: "✅ Cobertura completa" o "❌ Omisiones detectadas: [detalles]".
   
   **3 FORMATO DE SALIDA**

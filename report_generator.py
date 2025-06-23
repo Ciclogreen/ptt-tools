@@ -24,7 +24,7 @@ class ReportGenerator:
     La clase sigue mejores prácticas para manejo de errores, logging y gestión de estado.
     """
     
-    def __init__(self, api_key: Optional[str] = None, model: str = "openai/gpt-4o-mini"):
+    def __init__(self, api_key: Optional[str] = None, model: str = "openai/o4-mini"):
         """
         Inicializa el ReportGenerator con configuración de API y plantillas de prompt.
         
