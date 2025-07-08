@@ -1,6 +1,14 @@
 import pandas as pd
 import numpy as np
 from supabase import Client
+import math
+import logging
+import httpx
+
+# Desactivar logs de httpx y sus submódulos
+logging.getLogger("httpx").setLevel(logging.WARNING)
+logging.getLogger("httpcore").setLevel(logging.WARNING)
+logging.getLogger("LiteLLM").setLevel(logging.WARNING)
 
 class SurveyAnalytics:
     """
@@ -156,7 +164,7 @@ class SurveyAnalytics:
             postal_keywords = ["código postal", "codigo postal", "postal code", "cp", "zip", "c.p."]
             for question in questions.data:
                 question_text = question['question_text'].lower()
-                if any(keyword in question_text for keyword in postal_keywords):
+                if any(keyword.lower() in question_text for keyword in postal_keywords):
                     postal_question_id = question['id']
                     postal_question_text = question['question_text']
                     break
@@ -167,35 +175,27 @@ class SurveyAnalytics:
                     "error": "No se encontró pregunta relacionada con código postal en la encuesta"
                 }
             
-            # 2. Usar la API de Supabase en lugar de SQL directo
-            # Primero, obtenemos todas las opciones para esta pregunta
-            options = self.supabase.table('options').select('id', 'option_text').eq('question_id', postal_question_id).eq('company_id', self.company_id).execute()
+            # 2. Obtener respuestas abiertas directamente
+            answers = self.supabase.table('answers').select('open_value', 'respondent_id').eq('question_id', postal_question_id).eq('company_id', self.company_id).execute()
             
-            if not options.data:
-                return {
-                    "name": "Distribución por código postal",
-                    "error": "No se encontraron opciones para la pregunta de código postal"
-                }
+            # Contar códigos postales únicos
+            postal_counts = {}
+            unique_respondents = set()
             
-            # Creamos un mapa de option_id a option_text (código postal)
-            option_map = {opt['id']: opt['option_text'] for opt in options.data}
-            
-            # SOLUCIÓN: En lugar de obtener todas las respuestas y luego filtrar,
-            # inicializamos los contadores para cada opción
-            postal_counts = {option_text: 0 for option_text in option_map.values()}
-            
-            # Procesar cada opción individualmente para evitar el límite de 1000 registros
-            for option_id, option_text in option_map.items():
-                # Obtener el conteo exacto de respuestas para esta opción
-                count_result = self.supabase.table('answers') \
-                    .select('id', count='exact') \
-                    .eq('option_id', option_id) \
-                    .eq('company_id', self.company_id) \
-                    .execute()
-                postal_counts[option_text] = count_result.count
+            for answer in answers.data:
+                respondent_id = answer['respondent_id']
+                if respondent_id in unique_respondents:
+                    continue  # Evitar duplicados por respondente
+                
+                unique_respondents.add(respondent_id)
+                postal_code = answer.get('open_value')
+                
+                if postal_code and str(postal_code).strip():
+                    postal_code = str(postal_code).strip()
+                    postal_counts[postal_code] = postal_counts.get(postal_code, 0) + 1
             
             # Calcular total de respuestas válidas
-            total_valid_responses = sum(postal_counts.values())
+            total_valid_responses = len(unique_respondents)
             
             if total_valid_responses == 0:
                 return {
@@ -266,7 +266,7 @@ class SurveyAnalytics:
             # 1. First, find the age question by searching for keywords
             questions = self.supabase.table('questions').select('id', 'question_text').eq('company_id', self.company_id).execute()
             
-            print(f"DEBUG: Total number of questions for company {self.company_id}: {len(questions.data)}")
+            
             
             age_question_id = None
             age_question_text = ""
@@ -278,7 +278,7 @@ class SurveyAnalytics:
                 if any(keyword in question_text for keyword in age_keywords):
                     age_question_id = question['id']
                     age_question_text = question['question_text']
-                    print(f"DEBUG: Found age question: ID={age_question_id}, Text='{age_question_text}'")
+                    
                     break
             
             if not age_question_id:
@@ -290,7 +290,7 @@ class SurveyAnalytics:
             # 2. Get all options for the age question
             options = self.supabase.table('options').select('id', 'option_text').eq('question_id', age_question_id).eq('company_id', self.company_id).execute()
             
-            print(f"DEBUG: Found {len(options.data)} options for age question")
+            
             
             if not options.data:
                 return {
@@ -300,7 +300,7 @@ class SurveyAnalytics:
             
             # Create map of option_id to option_text (age range)
             option_map = {opt['id']: opt['option_text'] for opt in options.data}
-            print(f"DEBUG: Option map: {option_map}")
+            
             
             # MODIFICACIÓN: En lugar de obtener todas las respuestas y luego filtrar,
             # obtenemos directamente solo las respuestas para las opciones de la pregunta de edad
@@ -318,13 +318,13 @@ class SurveyAnalytics:
                     .eq('company_id', self.company_id) \
                     .execute()
                 age_counts[option_text] = count_result.count
-                print(f"DEBUG: Option '{option_text}' has {count_result.count} responses")
+                
             
-            print(f"DEBUG: Age counts after processing: {age_counts}")
+            
             
             # Calculate total valid responses
             total_valid_responses = sum(age_counts.values())
-            print(f"DEBUG: Total valid responses: {total_valid_responses}")
+            
             
             if total_valid_responses == 0:
                 return {
@@ -337,7 +337,7 @@ class SurveyAnalytics:
             for age_range, count in age_counts.items():
                 percent = round((count / total_valid_responses) * 100, 2)
                 age_percentages[age_range] = percent
-                print(f"DEBUG: {age_range}: {count} responses = {percent}%")
+                
             
             # Sort age ranges if possible (try to extract numeric values from the ranges)
             try:
@@ -898,7 +898,7 @@ class SurveyAnalytics:
             if not options.data:
                 # Si no hay opciones preestablecidas, esta puede ser una pregunta de texto libre
                 # Buscar respuestas directamente
-                answers = self.supabase.table('answers').select('response_value', 'respondent_id').eq('question_id', distance_question_id).eq('company_id', self.company_id).execute()
+                answers = self.supabase.table('answers').select('open_value', 'respondent_id').eq('question_id', distance_question_id).eq('company_id', self.company_id).execute()
                 unique_respondents = set()
                 
                 for answer in answers.data:
@@ -906,7 +906,7 @@ class SurveyAnalytics:
                         continue
                         
                     unique_respondents.add(answer['respondent_id'])
-                    distance_value = self._extract_distance_value(answer['response_value'])
+                    distance_value = self._extract_distance_value(answer['open_value'])
                     
                     if distance_value is not None:
                         # Clasificar en el rango correspondiente
@@ -1105,7 +1105,7 @@ class SurveyAnalytics:
             if not options.data:
                 # Si no hay opciones preestablecidas, esta puede ser una pregunta de texto libre
                 # Buscar respuestas directamente
-                answers = self.supabase.table('answers').select('response_value', 'respondent_id').eq('question_id', time_question_id).eq('company_id', self.company_id).execute()
+                answers = self.supabase.table('answers').select('open_value', 'respondent_id').eq('question_id', time_question_id).eq('company_id', self.company_id).execute()
                 unique_respondents = set()
                 
                 for answer in answers.data:
@@ -1113,7 +1113,7 @@ class SurveyAnalytics:
                         continue
                         
                     unique_respondents.add(answer['respondent_id'])
-                    time_value = self._extract_time_value(answer['response_value'])
+                    time_value = self._extract_time_value(answer['open_value'])
                     
                     if time_value is not None:
                         # Clasificar en el rango correspondiente
@@ -1443,33 +1443,13 @@ class SurveyAnalytics:
         durante su jornada laboral) que utilizan coche propio.
         
         Esta métrica se basa en la pregunta: "¿El vehículo que utilizas para ir al trabajo 
-        es propiedad de la compañía?" y se calcula solo sobre el subconjunto de trabajadores
-        que indicaron que realizan desplazamientos en misión.
-        
-        La fórmula es: Porcentaje_misión_coche (%) = N_misión_coche_prop / N_misión × 100
+        es propiedad de la compañía?" y se calcula sobre el total de respuestas válidas a esta
+        pregunta, sin importar si el trabajador realiza o no desplazamientos en misión.
         
         Returns:
-            dict: Resultados del análisis con el porcentaje de viajeros en misión que usan coche propio
+            dict: Resultados del análisis con el porcentaje de viajeros que usan coche propio
         """
         try:
-            # Verificar que tenemos la lista de respondentes que realizan desplazamientos en misión
-            if not hasattr(self, 'mission_respondents') or not self.mission_respondents:
-                # Si no tenemos los datos, ejecutamos primero el cálculo de misiones
-                business_trips = self.calculate_business_trips_percentage()
-                # Verificar si hubo error
-                if "error" in business_trips:
-                    return {
-                        "name": "Porcentaje de viajeros en misión que usan coche propio",
-                        "error": "No se pudieron identificar los trabajadores que realizan desplazamientos en misión"
-                    }
-            
-            # Si no hay trabajadores con desplazamientos en misión, retornar resultado vacío
-            if not hasattr(self, 'mission_respondents') or len(self.mission_respondents) == 0:
-                return {
-                    "name": "Porcentaje de viajeros en misión que usan coche propio",
-                    "error": "No hay trabajadores identificados que realicen desplazamientos en misión"
-                }
-            
             # Buscar la pregunta relacionada con la propiedad del vehículo
             questions = self.supabase.table('questions').select('id', 'question_text').eq('company_id', self.company_id).execute()
             car_ownership_question_id = None
@@ -1491,7 +1471,7 @@ class SurveyAnalytics:
             
             if not car_ownership_question_id:
                 return {
-                    "name": "Porcentaje de viajeros en misión que usan coche propio",
+                    "name": "Porcentaje de viajeros que usan coche propio",
                     "error": "No se encontró ninguna pregunta relacionada con la propiedad del vehículo"
                 }
             
@@ -1512,38 +1492,50 @@ class SurveyAnalytics:
                     # Si = coche de empresa, No = coche propio
                     is_company_car = any(word in option_text for word in ['sí', 'si', 'yes', 'true', '1'])
                     
-                    # Contar solo las respuestas de los trabajadores que hacen desplazamientos en misión
-                    answers = self.supabase.table('answers').select('respondent_id').eq('option_id', option['id']).eq('company_id', self.company_id).execute()
+                    # Contar respuestas para esta opción usando count='exact'
+                    count_result = self.supabase.table('answers') \
+                        .select('id', count='exact') \
+                        .eq('option_id', option['id']) \
+                        .eq('company_id', self.company_id) \
+                        .execute()
                     
-                    for answer in answers.data:
-                        # Solo contar si el respondente está en nuestra lista de desplazamientos en misión
-                        if answer['respondent_id'] in self.mission_respondents:
-                            if is_company_car:
-                                company_car_count += 1
-                            else:
-                                own_car_count += 1
+                    answer_count = count_result.count
+                    
+                    if is_company_car:
+                        company_car_count += answer_count
+                    else:
+                        own_car_count += answer_count
             else:
                 # Si es una pregunta de texto libre, intentar analizar las respuestas directamente
                 answers = self.supabase.table('answers').select('response_value', 'respondent_id').eq('question_id', car_ownership_question_id).eq('company_id', self.company_id).execute()
+                unique_respondents = set()
                 
                 for answer in answers.data:
-                    # Solo procesar si el respondente está en nuestra lista de desplazamientos en misión
-                    if answer['respondent_id'] in self.mission_respondents:
-                        response_text = answer['response_value'].lower().strip()
-                        
-                        # Para la pregunta "¿El vehículo que utilizas para ir al trabajo es propiedad de la compañía?"
-                        # Si = coche de empresa, No = coche propio
-                        if any(word in response_text for word in ['sí', 'si', 'yes', 'true', '1', 'verdadero', 'afirmativo']):
-                            company_car_count += 1
-                        else:
-                            own_car_count += 1
+                    if answer['respondent_id'] in unique_respondents:
+                        continue
+                    
+                    unique_respondents.add(answer['respondent_id'])
+                    response_text = answer['response_value'].lower().strip()
+                    
+                    # Para la pregunta "¿El vehículo que utilizas para ir al trabajo es propiedad de la compañía?"
+                    # Si = coche de empresa, No = coche propio
+                    if any(word in response_text for word in ['sí', 'si', 'yes', 'true', '1', 'verdadero', 'afirmativo']):
+                        company_car_count += 1
+                    else:
+                        own_car_count += 1
             
-            # Total de respuestas válidas (solo entre los que hacen desplazamientos en misión)
-            total_mission_car_respondents = company_car_count + own_car_count
+            # Total de respuestas válidas para esta pregunta específica
+            total_car_respondents = company_car_count + own_car_count
             
-            # Calcular porcentajes
-            company_car_percentage = (company_car_count / total_mission_car_respondents) * 100 if total_mission_car_respondents > 0 else 0
-            own_car_percentage = (own_car_count / total_mission_car_respondents) * 100 if total_mission_car_respondents > 0 else 0
+            if total_car_respondents == 0:
+                return {
+                    "name": "Porcentaje de viajeros que usan coche propio",
+                    "error": "No hay respuestas válidas para la pregunta de propiedad del vehículo"
+                }
+            
+            # Calcular porcentajes basados en el total de respuestas a esta pregunta
+            company_car_percentage = (company_car_count / total_car_respondents) * 100 if total_car_respondents > 0 else 0
+            own_car_percentage = (own_car_count / total_car_respondents) * 100 if total_car_respondents > 0 else 0
             
             # Preparar resultado
             result = {
@@ -1552,14 +1544,13 @@ class SurveyAnalytics:
             }
             
             variables = {
-                "N_misión": len(self.mission_respondents),
-                "N_misión_coche_respuestas": total_mission_car_respondents,
-                "N_misión_coche_prop": own_car_count,
-                "N_misión_coche_empresa": company_car_count
+                "N_respuestas_válidas": total_car_respondents,
+                "N_coche_propio": own_car_count,
+                "N_coche_empresa": company_car_count
             }
             
             return {
-                "name": "Porcentaje de viajeros en misión que usan coche propio",
+                "name": "Porcentaje de viajeros que usan coche propio",
                 "question": question_text,
                 "result": result,
                 "variables": variables
@@ -1567,8 +1558,8 @@ class SurveyAnalytics:
             
         except Exception as e:
             return {
-                "name": "Porcentaje de viajeros en misión que usan coche propio",
-                "error": f"Error al calcular el porcentaje de viajeros en misión con coche propio: {e}"
+                "name": "Porcentaje de viajeros que usan coche propio",
+                "error": f"Error al calcular el porcentaje de viajeros que usan coche propio: {e}"
             }
             
     def calculate_engine_type_percentage(self):
@@ -1935,7 +1926,7 @@ class SurveyAnalytics:
             
             if not parking_question_id:
                 return {
-                    "name": "Porcentaje con aparcamiento gratuito en la empresa",
+                    "name": "Porcentaje con aparcamiento en la empresa",
                     "error": "No se encontró ninguna pregunta relacionada con el lugar de aparcamiento"
                 }
             
@@ -2000,7 +1991,7 @@ class SurveyAnalytics:
             # Si no hay respuestas, devolver error
             if total_responses == 0:
                 return {
-                    "name": "Porcentaje con aparcamiento gratuito en la empresa",
+                    "name": "Porcentaje con aparcamiento en la empresa",
                     "error": "No se encontraron respuestas a la pregunta sobre lugar de aparcamiento"
                 }
             
@@ -2020,7 +2011,7 @@ class SurveyAnalytics:
             }
             
             return {
-                "name": "Porcentaje con aparcamiento gratuito en la empresa",
+                "name": "Porcentaje con aparcamiento en la empresa",
                 "question": question_text,
                 "result": result,
                 "variables": variables
@@ -2028,8 +2019,8 @@ class SurveyAnalytics:
             
         except Exception as e:
             return {
-                "name": "Porcentaje con aparcamiento gratuito en la empresa",
-                "error": f"Error al calcular el porcentaje con aparcamiento gratuito: {e}"
+                "name": "Porcentaje con aparcamiento en la empresa",
+                "error": f"Error al calcular el porcentaje con aparcamiento: {e}"
             }
 
     def calculate_no_parking_problems_percentage(self):
@@ -2202,11 +2193,13 @@ class SurveyAnalytics:
             
             # Palabras clave para identificar la pregunta sobre barreras al transporte público
             barriers_keywords = [
+                "indica las principales razones por las que no utilizas el transporte público",
                 "razones", "motivos", "barreras", "limitaciones", "dificultades", 
                 "no utilizas", "no usas", "no usar", "no utilizar", "impiden utilizar",
                 "impiden usar", "por qué no", "razón por la que no"
             ]
-           
+        
+            
             # Buscar la pregunta adecuada
             for question in questions.data:
                 question_lower = question['question_text'].lower()
@@ -2215,9 +2208,11 @@ class SurveyAnalytics:
                 if any(keyword in question_lower for keyword in barriers_keywords):
                     barriers_question_id = question['id']
                     question_text = question['question_text']
+                    
                     break
             
             if not barriers_question_id:
+                print("DEBUG: No se encontró ninguna pregunta relacionada con barreras")
                 return {
                     "name": "Porcentaje por barrera al uso de transporte público",
                     "error": "No se encontró ninguna pregunta relacionada con barreras al uso de transporte público"
@@ -2225,6 +2220,7 @@ class SurveyAnalytics:
             
             # Obtener todas las opciones para esta pregunta
             options = self.supabase.table('options').select('id', 'option_text').eq('question_id', barriers_question_id).eq('company_id', self.company_id).execute()
+            
             
             # Recopilar información de las opciones
             option_counts = {}  # Conteo de menciones por opción
@@ -2235,25 +2231,52 @@ class SurveyAnalytics:
             
             # Si hay opciones predefinidas (pregunta de opción múltiple)
             if options.data:
+                # Verificar si existe una opción "otro"/"otros"
+                other_option_ids = []
+                
                 # Mapeo de IDs de opciones a textos de opciones
                 for option in options.data:
                     option_id = option['id']
                     option_text = option['option_text'].strip()
                     option_texts[option_id] = option_text
                     option_counts[option_id] = 0
+                    
+                    
+                    # Detectar opciones de "otro"
+                    if option_text.lower() in ["otro", "otros", "otra", "otras", "other"]:
+                        other_option_ids.append(option_id)
+                        
                 
                 # Contar menciones para cada opción
+                # Para preguntas de opción múltiple (modificar línea 2400):
                 all_answers = self.supabase.table('answers').select('respondent_id', 'option_id').eq('question_id', barriers_question_id).eq('company_id', self.company_id).execute()
+                
+                
+                # Contar respuestas "otros" con texto personalizado
+                other_responses = []
                 
                 for answer in all_answers.data:
                     respondents.add(answer['respondent_id'])
                     option_id = answer['option_id']
-                    if option_id in option_counts:
-                        option_counts[option_id] += 1
-            
+                    
+                    # Asegurarse de contar todas las respuestas, incluso si no están en option_counts
+                    if option_id not in option_counts:
+                        
+                        option_counts[option_id] = 0
+                        option_texts[option_id] = f"Opción {option_id}"
+                    
+                    option_counts[option_id] += 1
+                    
+                    # Registrar respuestas de tipo "otros"
+                    if option_id in other_option_ids and 'response_value' in answer and answer['response_value']:
+                        other_responses.append(answer['response_value'])
+                        
+                
+                
             else:
                 # Si es una pregunta de texto libre
                 answers = self.supabase.table('answers').select('response_value', 'respondent_id').eq('question_id', barriers_question_id).eq('company_id', self.company_id).execute()
+                
                 
                 # Conjunto de palabras clave para clasificar respuestas textuales
                 common_barriers = {
@@ -2271,6 +2294,10 @@ class SurveyAnalytics:
                     option_counts[barrier_key] = 0
                     option_texts[barrier_key] = barrier_key.replace("_", " ").title()
                 
+                # Agregar contador para respuestas no clasificadas
+                option_counts["otros"] = 0
+                option_texts["otros"] = "Otros"
+                
                 # Contar menciones para cada barrera identificada en el texto libre
                 for answer in answers.data:
                     respondent_id = answer['respondent_id']
@@ -2279,14 +2306,28 @@ class SurveyAnalytics:
                     response_text = answer['response_value'].lower()
                     
                     # Verificar qué barreras se mencionan en la respuesta
+                    matched = False
                     for barrier_key, keywords in common_barriers.items():
                         if any(keyword in response_text for keyword in keywords):
                             option_counts[barrier_key] += 1
+                            matched = True
+                            
+                    
+                    # Si no coincidió con ninguna categoría conocida
+                    if not matched:
+                        option_counts["otros"] += 1
+                        
             
             # Total de respondentes que contestaron la pregunta
             total_respondents = len(respondents)
+            total_mentions = sum(option_counts.values())
+            
+            
+            
+            
             
             if total_respondents == 0:
+                print("DEBUG: No se encontraron respuestas")
                 return {
                     "name": "Porcentaje por barrera al uso de transporte público",
                     "error": "No se encontraron respuestas a la pregunta sobre barreras al transporte público"
@@ -2304,6 +2345,8 @@ class SurveyAnalytics:
                 if count > 0:  # Solo incluir barreras que fueron mencionadas
                     option_name = option_texts[option_id]
                     percentage = (count / total_respondents) * 100
+                    
+                    
                     
                     # Para el resultado principal, mostrar solo las barreras más frecuentes
                     if len(result) < 5:  # Limitar a las 5 barreras más mencionadas para el resultado principal
@@ -2324,6 +2367,9 @@ class SurveyAnalytics:
             }
             
         except Exception as e:
+            import traceback
+            print(f"ERROR: {str(e)}")
+            print(traceback.format_exc())
             return {
                 "name": "Porcentaje por barrera al uso de transporte público",
                 "error": f"Error al calcular el porcentaje por barrera al uso de transporte público: {e}"
@@ -3157,4 +3203,1279 @@ class SurveyAnalytics:
             return {
                 "name": "Porcentaje por factor de mejora al uso de bicicleta",
                 "error": f"Error al calcular el porcentaje por factor de mejora al uso de bicicleta: {e}"
+            }
+            
+    def calculate_department_distribution(self):
+        """
+        Calculate employee distribution by department/area
+        Percentage_department (%) = N_department / N_valid_responses × 100
+        
+        Returns:
+            dict: Dictionary containing the calculation name and results
+        """
+        try:
+            # 1. Find the department/area question by searching for keywords
+            questions = self.supabase.table('questions').select('id', 'question_text').eq('company_id', self.company_id).execute()
+            
+            department_question_id = None
+            department_question_text = ""
+            
+            # Search for department question using keywords
+            department_keywords = ["eres personal de", "área", "area", "department", "departamento", "división", "division"]
+            for question in questions.data:
+                question_text = question['question_text'].lower()
+                if any(keyword in question_text for keyword in department_keywords):
+                    department_question_id = question['id']
+                    department_question_text = question['question_text']
+                    break
+            
+            if not department_question_id:
+                return {
+                    "name": "Distribución por departamento",
+                    "error": "No se encontró pregunta relacionada con departamento en la encuesta"
+                }
+            
+            # 2. Get all options for the department question
+            options = self.supabase.table('options').select('id', 'option_text').eq('question_id', department_question_id).eq('company_id', self.company_id).execute()
+            
+            if not options.data:
+                return {
+                    "name": "Distribución por departamento",
+                    "error": "No se encontraron opciones para la pregunta de departamento"
+                }
+            
+            # Create map of option_id to option_text
+            option_map = {opt['id']: opt['option_text'] for opt in options.data}
+            
+            # Inicializar contadores
+            department_counts = {option_text: 0 for option_text in option_map.values()}
+            
+            # Procesar cada opción individualmente para evitar el límite de 1000 registros
+            for option_id, option_text in option_map.items():
+                # Obtener el conteo exacto de respuestas para esta opción
+                count_result = self.supabase.table('answers') \
+                    .select('id', count='exact') \
+                    .eq('option_id', option_id) \
+                    .eq('company_id', self.company_id) \
+                    .execute()
+                department_counts[option_text] = count_result.count
+            
+            # Calculate total valid responses
+            total_valid_responses = sum(department_counts.values())
+            
+            if total_valid_responses == 0:
+                return {
+                    "name": "Distribución por departamento",
+                    "error": "No hay respuestas válidas para la pregunta de departamento"
+                }
+            
+            # Calculate percentages
+            department_percentages = {}
+            for department, count in department_counts.items():
+                department_percentages[department] = round((count / total_valid_responses) * 100, 2)
+            
+            return {
+                "name": "Distribución por departamento",
+                "question": department_question_text,
+                "result": department_percentages,
+                "variables": {
+                    "N_respuestas_válidas": total_valid_responses,
+                    "counts": department_counts
+                }
+            }
+            
+        except Exception as e:
+            return {
+                "name": "Distribución por departamento",
+                "error": f"Error al calcular la distribución por departamento: {e}"
+            }
+
+
+    def calculate_workdays_distribution(self):
+        """
+        Calculate distribution of workdays throughout the week
+        Percentage_workdays (%) = N_workday_option / N_valid_responses × 100
+        
+        Returns:
+            dict: Dictionary containing the calculation name and results
+        """
+        try:
+            # 1. Find the workdays question by searching for keywords
+            questions = self.supabase.table('questions').select('id', 'question_text').eq('company_id', self.company_id).execute()
+            
+            workdays_question_id = None
+            workdays_question_text = ""
+            
+            # Search for workdays question using keywords
+            workdays_keywords = ["días de la semana que trabajas", "días que trabajas", "días laborables"]
+            for question in questions.data:
+                question_text = question['question_text'].lower()
+                if any(keyword in question_text for keyword in workdays_keywords):
+                    workdays_question_id = question['id']
+                    workdays_question_text = question['question_text']
+                    break
+            
+            if not workdays_question_id:
+                return {
+                    "name": "Distribución por días de trabajo semanal",
+                    "error": "No se encontró pregunta relacionada con días de trabajo semanal en la encuesta"
+                }
+            
+            # 2. Get all options for the workdays question
+            options = self.supabase.table('options').select('id', 'option_text').eq('question_id', workdays_question_id).eq('company_id', self.company_id).execute()
+            
+            if not options.data:
+                return {
+                    "name": "Distribución por días de trabajo semanal",
+                    "error": "No se encontraron opciones para la pregunta de días de trabajo semanal"
+                }
+            
+            # Create map of option_id to option_text
+            option_map = {opt['id']: opt['option_text'] for opt in options.data}
+            
+            # Inicializar contadores
+            workdays_counts = {option_text: 0 for option_text in option_map.values()}
+            
+            # Procesar cada opción individualmente para evitar el límite de 1000 registros
+            for option_id, option_text in option_map.items():
+                # Obtener el conteo exacto de respuestas para esta opción
+                count_result = self.supabase.table('answers') \
+                    .select('id', count='exact') \
+                    .eq('option_id', option_id) \
+                    .eq('company_id', self.company_id) \
+                    .execute()
+                workdays_counts[option_text] = count_result.count
+            
+            # CORRECCIÓN: Calcular el total de respondentes únicos, no la suma de opciones
+            unique_respondents = set()
+            for option_id in option_map.keys():
+                answers = self.supabase.table('answers') \
+                    .select('respondent_id') \
+                    .eq('option_id', option_id) \
+                    .eq('company_id', self.company_id) \
+                    .execute()
+                for answer in answers.data:
+                    unique_respondents.add(answer['respondent_id'])
+            
+            total_valid_responses = len(unique_respondents)
+            
+            if total_valid_responses == 0:
+                return {
+                    "name": "Distribución por días de trabajo semanal",
+                    "error": "No hay respuestas válidas para la pregunta de días de trabajo semanal"
+                }
+            
+            # Calculate percentages
+            workdays_percentages = {}
+            for workday_option, count in workdays_counts.items():
+                workdays_percentages[workday_option] = round((count / total_valid_responses) * 100, 2)
+                
+            return {
+                "name": "Distribución por días de trabajo semanal",
+                "question": workdays_question_text,
+                "result": workdays_percentages,
+                "variables": {
+                    "N_respuestas_válidas": total_valid_responses,
+                    "counts": workdays_counts
+                }
+            }
+            
+        except Exception as e:
+            return {
+                "name": "Distribución por días de trabajo semanal",
+                "error": f"Error al calcular la distribución por días de trabajo semanal: {e}"
+            }
+
+    def calculate_transport_combination_distribution(self):
+        """
+        Calculates the distribution of most frequent transport mode combinations.
+        Identifies which specific combinations are most common among multimodal workers.
+        
+        Returns:
+            dict: Analysis results with most frequent combinations and their percentages
+        """
+        try:
+            # 1. Find the question about transport combinations
+            questions = self.supabase.table('questions').select('id', 'question_text').eq('company_id', self.company_id).execute()
+            
+            multimodal_question_id = None
+            multimodal_question_text = ""
+            
+            # Search for the question using keywords
+            multimodal_keywords = [
+                "Si combinas varios medios de transporte",
+                "combinas", "combine", "combinación", "combination", 
+                "varios medios", "multiple modes", "multimodal",
+                "más de un medio", "more than one mode", "varios transportes"
+            ]
+            for question in questions.data:
+                question_text = question['question_text'].lower()
+                if any(keyword in question_text for keyword in multimodal_keywords):
+                    multimodal_question_id = question['id']
+                    multimodal_question_text = question['question_text']
+                    break
+            
+            if not multimodal_question_id:
+                return {
+                    "name": "Distribución de combinaciones de transporte",
+                    "error": "No se encontró pregunta relacionada con combinación de transportes en la encuesta"
+                }
+            
+            # 2. Get all options for this question
+            options = self.supabase.table('options').select('id', 'option_text').eq('question_id', multimodal_question_id).eq('company_id', self.company_id).execute()
+            
+            if not options.data:
+                return {
+                    "name": "Distribución de combinaciones de transporte",
+                    "error": "No se encontraron opciones para la pregunta de combinación de transportes"
+                }
+                
+            # Create option map for reference
+            option_map = {opt['id']: opt['option_text'] for opt in options.data}
+            
+            # 3. Get answers grouped by respondent
+            # This approach will allow us to identify which options each person selected
+            respondent_selections = {}
+            
+            # Process each option individually to avoid query limits
+            for option_id, option_text in option_map.items():
+                answers = self.supabase.table('answers') \
+                    .select('respondent_id') \
+                    .eq('option_id', option_id) \
+                    .eq('company_id', self.company_id) \
+                    .execute()
+                
+                # Group answers by respondent
+                for answer in answers.data:
+                    respondent_id = answer['respondent_id']
+                    if respondent_id not in respondent_selections:
+                        respondent_selections[respondent_id] = []
+                        
+                    respondent_selections[respondent_id].append(option_text)
+            
+            # 4. Count combinations
+            combination_counts = {}
+            
+            for respondent_id, selected_options in respondent_selections.items():
+                # We're only interested in those who selected more than one option (multimodal)
+                if len(selected_options) > 1:
+                    # Sort the options to have consistent combinations
+                    selected_options.sort()
+                    # Create a unique key for this combination
+                    combination_key = " + ".join(selected_options)
+                    
+                    # Increment the counter for this combination
+                    if combination_key not in combination_counts:
+                        combination_counts[combination_key] = 0
+                    combination_counts[combination_key] += 1
+            
+            # 5. Calculate total multimodal workers
+            total_multimodal = sum(combination_counts.values())
+            
+            if total_multimodal == 0:
+                return {
+                    "name": "Distribución de combinaciones de transporte",
+                    "error": "No se encontraron trabajadores multimodales"
+                }
+                
+            # 6. Calculate percentages and sort by frequency
+            combination_percentages = {}
+            for combination, count in combination_counts.items():
+                percentage = (count / total_multimodal) * 100
+                combination_percentages[combination] = round(percentage, 2)
+            
+            # Sort by descending percentage
+            sorted_combinations = sorted(
+                combination_percentages.items(), 
+                key=lambda x: x[1], 
+                reverse=True
+            )
+            
+            # Limit to the 10 most frequent combinations to avoid overload
+            top_combinations = dict(sorted_combinations[:10])
+            
+            # If there are more than 10 combinations, group the rest as "Other combinations"
+            if len(sorted_combinations) > 10:
+                other_percentage = sum(dict(sorted_combinations[10:]).values())
+                top_combinations["Otras combinaciones"] = round(other_percentage, 2)
+            
+            return {
+                "name": "Distribución de combinaciones de transporte",
+                "question": multimodal_question_text,
+                "result": top_combinations,
+                "variables": {
+                    "N_multimodales": total_multimodal,
+                    "N_combinaciones_distintas": len(combination_counts),
+                    "counts": combination_counts
+                }
+            }
+            
+        except Exception as e:
+            return {
+                "name": "Distribución de combinaciones de transporte",
+                "error": f"Error al calcular la distribución de combinaciones de transporte: {e}"
+            }
+            
+    def calculate_car_occupancy_distribution(self):
+        """
+        Calculates the distribution of vehicle occupants.
+        
+        This metric analyzes how many people travel in each car,
+        including the driver, based on the question "¿Cuántos compañeros/as 
+        viajáis en el coche, contándote a ti?"
+        
+        Returns:
+            dict: Analysis results with vehicle occupancy distribution
+        """
+        try:
+            # Find question related to vehicle occupancy
+            questions = self.supabase.table('questions').select('id', 'question_text').eq('company_id', self.company_id).execute()
+            occupancy_question_id = None
+            question_text = "Ocupantes por vehículo"
+            
+            # Keywords to identify the occupancy question
+            occupancy_keywords = [
+                "cuántos compañeros", "cuantos compañeros", "ocupantes", 
+                "personas viajan", "viajáis en el coche", "contándote a ti",
+                "cuántas personas", "número de ocupantes", "car occupancy"
+            ]
+            
+            # Find the right question
+            for question in questions.data:
+                question_lower = question['question_text'].lower()
+                if any(keyword in question_lower for keyword in occupancy_keywords):
+                    occupancy_question_id = question['id']
+                    question_text = question['question_text']
+                    break
+            
+            if not occupancy_question_id:
+                return {
+                    "name": "Distribución de ocupantes por vehículo",
+                    "error": "No se encontró ninguna pregunta relacionada con ocupantes por vehículo"
+                }
+            
+            # Get all options for this question
+            options = self.supabase.table('options').select('id', 'option_text').eq('question_id', occupancy_question_id).eq('company_id', self.company_id).execute()
+            
+            occupancy_counts = {}
+            total_valid_responses = 0
+            
+            # If there are predefined options (possibly numeric options like 1, 2, 3, 4, 5...)
+            if options.data:
+                for option in options.data:
+                    # Normalize the option text
+                    option_text = option['option_text'].strip()
+                    
+                    # Count responses for this option using count='exact'
+                    count_result = self.supabase.table('answers') \
+                        .select('id', count='exact') \
+                        .eq('option_id', option['id']) \
+                        .eq('company_id', self.company_id) \
+                        .execute()
+                    
+                    answer_count = count_result.count
+                    
+                    if answer_count > 0:
+                        # Try to interpret if the option is a number
+                        try:
+                            # If the option is a number, use it as a label
+                            option_value = int(option_text)
+                            if option_value > 0:  # Only include positive values
+                                occupancy_counts[f"{option_value} {'ocupante' if option_value == 1 else 'ocupantes'}"] = answer_count
+                        except ValueError:
+                            # If not a number, use the full text
+                            occupancy_counts[option_text] = answer_count
+                        
+                        total_valid_responses += answer_count
+            else:
+                # If it's a free text/numeric question, try to analyze responses directly
+                answers = self.supabase.table('answers').select('response_value', 'respondent_id').eq('question_id', occupancy_question_id).eq('company_id', self.company_id).execute()
+                unique_respondents = set()
+                
+                for answer in answers.data:
+                    if answer['respondent_id'] in unique_respondents:
+                        continue
+                    
+                    unique_respondents.add(answer['respondent_id'])
+                    response_text = answer['response_value'].strip()
+                    
+                    # Try to interpret if the response is a number
+                    try:
+                        response_value = int(float(response_text))
+                        if response_value > 0:  # Only include positive values
+                            key = f"{response_value} {'ocupante' if response_value == 1 else 'ocupantes'}"
+                            if key not in occupancy_counts:
+                                occupancy_counts[key] = 0
+                            occupancy_counts[key] += 1
+                            total_valid_responses += 1
+                    except ValueError:
+                        # Ignore responses that aren't numeric
+                        pass
+            
+            if total_valid_responses == 0:
+                return {
+                    "name": "Distribución de ocupantes por vehículo",
+                    "error": "No hay respuestas válidas para la pregunta de ocupantes por vehículo"
+                }
+            
+            # Calculate percentages
+            occupancy_percentages = {}
+            for option, count in occupancy_counts.items():
+                percentage = (count / total_valid_responses) * 100
+                occupancy_percentages[option] = round(percentage, 2)
+            
+            # Sort by number of occupants (extract the number from the start of the key)
+            sorted_occupancy = dict(sorted(
+                occupancy_percentages.items(),
+                key=lambda x: int(x[0].split()[0]) if x[0].split()[0].isdigit() else 0
+            ))
+            
+            # Calculate average occupants
+            weighted_sum = 0
+            for option, percentage in occupancy_percentages.items():
+                try:
+                    num_occupants = int(option.split()[0])
+                    weighted_sum += num_occupants * (percentage / 100)
+                except (ValueError, IndexError):
+                    # Ignore if we can't extract a number
+                    pass
+            
+            average_occupants = round(weighted_sum * total_valid_responses / total_valid_responses, 2) if total_valid_responses > 0 else 0
+            
+            return {
+                "name": "Distribución de ocupantes por vehículo",
+                "question": question_text,
+                "result": sorted_occupancy,
+                "variables": {
+                    "N_respuestas_válidas": total_valid_responses,
+                    "Promedio_ocupantes": average_occupants,
+                    "counts": occupancy_counts
+                }
+            }
+            
+        except Exception as e:
+            return {
+                "name": "Distribución de ocupantes por vehículo",
+                "error": f"Error al calcular la distribución de ocupantes por vehículo: {e}"
+            }
+
+    def calculate_public_transport_estimated_time_distribution(self):
+        """
+        Calculates the distribution of estimated travel time using public transport.
+        
+        This metric analyzes responses to the question "¿Cuánto tiempo estimas que tardarías
+        utilizando el transporte público?", using the actual response options from the database.
+        
+        Returns:
+            dict: Analysis results with distribution of estimated travel times using public transport
+        """
+        try:
+            # Find question related to estimated time using public transport
+            questions = self.supabase.table('questions').select('id', 'question_text').eq('company_id', self.company_id).execute()
+            time_question_id = None
+            question_text = "Tiempo estimado en transporte público"
+            
+            # Keywords to identify the question
+            time_keywords = [
+                "cuánto tiempo estimas que tardarías utilizando el transporte público",
+                "tiempo estimas que tardarías utilizando el transporte público"
+            ]
+            
+            # Find the right question
+            for question in questions.data:
+                question_lower = question['question_text'].lower()
+                if any(keyword in question_lower for keyword in time_keywords):
+                    time_question_id = question['id']
+                    question_text = question['question_text']
+                    break
+            
+            if not time_question_id:
+                return {
+                    "name": "Distribución de tiempo estimado en transporte público",
+                    "error": "No se encontró ninguna pregunta relacionada con tiempo estimado en transporte público"
+                }
+            
+            # Get all options for this question
+            options = self.supabase.table('options').select('id', 'option_text').eq('question_id', time_question_id).eq('company_id', self.company_id).execute()
+            
+            time_counts = {}
+            total_valid_responses = 0
+            time_order_map = {}
+            
+            # If there are predefined options (like time ranges)
+            if options.data:
+                for option in options.data:
+                    option_text = option['option_text'].strip()
+                    
+                    # Count responses for this option using count='exact'
+                    count_result = self.supabase.table('answers') \
+                        .select('id', count='exact') \
+                        .eq('option_id', option['id']) \
+                        .eq('company_id', self.company_id) \
+                        .execute()
+                    
+                    answer_count = count_result.count
+                    
+                    if answer_count > 0:
+                        # Try to extract numeric values for sorting only (no default values)
+                        time_value = 0
+                        import re
+                        
+                        # Just for ordering, not for calculations
+                        if "menos de" in option_text.lower() or "less than" in option_text.lower():
+                            match = re.search(r'(\d+)', option_text)
+                            if match:
+                                time_value = -float(match.group(1))  # Negative for proper sorting
+                        elif "más de" in option_text.lower() or "more than" in option_text.lower():
+                            match = re.search(r'(\d+)', option_text)
+                            if match:
+                                time_value = float(match.group(1)) + 1000  # Large number for proper sorting
+                        else:
+                            # Try to extract range like "30-45"
+                            match = re.search(r'(\d+)[\s]*-[\s]*(\d+)', option_text)
+                            if match:
+                                time_value = float(match.group(1))  # Use first number for sorting
+                            else:
+                                # Try to extract a single number
+                                match = re.search(r'(\d+)', option_text)
+                                if match:
+                                    time_value = float(match.group(1))
+                        
+                        time_counts[option_text] = answer_count
+                        time_order_map[option_text] = time_value
+                        total_valid_responses += answer_count
+            else:
+                # If it's a free text question, just collect the raw responses without categorizing
+                answers = self.supabase.table('answers').select('response_value', 'respondent_id').eq('question_id', time_question_id).eq('company_id', self.company_id).execute()
+                unique_responses = {}
+                
+                # Count unique responses without imposing categories
+                for answer in answers.data:
+                    response_text = answer['response_value'].strip()
+                    
+                    if response_text:
+                        if response_text not in unique_responses:
+                            unique_responses[response_text] = 0
+                        unique_responses[response_text] += 1
+                        total_valid_responses += 1
+                
+                # If we have too many unique responses, just report that we can't categorize
+                if len(unique_responses) > 10:
+                    return {
+                        "name": "Distribución de tiempo estimado en transporte público",
+                        "error": "Hay demasiadas respuestas únicas para categorizar (respuestas de texto libre)"
+                    }
+                
+                time_counts = unique_responses
+            
+            if total_valid_responses == 0:
+                return {
+                    "name": "Distribución de tiempo estimado en transporte público",
+                    "error": "No hay respuestas válidas para la pregunta de tiempo estimado en transporte público"
+                }
+            
+            # Calculate percentages
+            time_percentages = {}
+            for option, count in time_counts.items():
+                percentage = (count / total_valid_responses) * 100
+                time_percentages[option] = round(percentage, 2)
+            
+            # Sort results by time order if available, otherwise alphabetically
+            if time_order_map:
+                sorted_times = dict(sorted(
+                    time_percentages.items(),
+                    key=lambda x: time_order_map.get(x[0], 0)
+                ))
+            else:
+                sorted_times = dict(sorted(time_percentages.items()))
+            
+            return {
+                "name": "Distribución de tiempo estimado en transporte público",
+                "question": question_text,
+                "result": sorted_times,
+                "variables": {
+                    "N_respuestas_válidas": total_valid_responses,
+                    "counts": time_counts
+                }
+            }
+            
+        except Exception as e:
+            return {
+                "name": "Distribución de tiempo estimado en transporte público",
+                "error": f"Error al calcular la distribución de tiempo estimado en transporte público: {e}"
+            }
+
+    def calculate_public_transport_satisfaction_distribution(self):
+        """
+        Analiza la distribución de satisfacción con el transporte público agrupando las respuestas numéricas (0-100) en 5 rangos fijos.
+        La pregunta debe ser de texto libre y contener palabras clave como "satisfacción" y "transporte público".
+        
+        Rangos:
+            0-20: Muy insatisfecho
+            21-40: Insatisfecho
+            41-60: Neutral
+            61-80: Satisfecho
+            81-100: Muy satisfecho
+        
+        Returns:
+            dict: Resultados del análisis con porcentajes y conteos por rango
+        """
+        try:
+            import math
+            # Buscar la pregunta relevante
+            questions = self.supabase.table('questions').select('id', 'question_text').eq('company_id', self.company_id).execute()
+            satisfaction_question_id = None
+            satisfaction_question_text = ""
+            keywords = [
+                "en relación al servicio actual de transporte público valora tu nivel de satisfacción",
+                "servicio actual de transporte público",
+                "satisfacción", "satisfaccion", "nivel de satisfaccion"
+            ]
+            # Find the right question
+            for question in questions.data:
+                question_lower = question['question_text'].lower()
+                if any(keyword.lower() in question_lower for keyword in keywords):
+                    satisfaction_question_id = question['id']
+                    satisfaction_question_text = question['question_text']
+                    break
+            if not satisfaction_question_id:
+                return {
+                    "name": "Distribución de satisfacción con el transporte público",
+                    "error": "No se encontró ninguna pregunta relacionada con satisfacción con el transporte público"
+                }
+            # Obtener respuestas de texto libre (numéricas) desde 'open_value'
+            answers = self.supabase.table('answers').select('open_value', 'respondent_id').eq('question_id', satisfaction_question_id).eq('company_id', self.company_id).execute()
+            # Procesar respuestas válidas
+            ranges = [
+                (0, 20, "Muy insatisfecho (0-20)"),
+                (21, 40, "Insatisfecho (21-40)"),
+                (41, 60, "Neutral (41-60)"),
+                (61, 80, "Satisfecho (61-80)"),
+                (81, 100, "Muy satisfecho (81-100)")
+            ]
+            counts = {label: 0 for _, _, label in ranges}
+            total_valid = 0
+            for answer in answers.data:
+                value_raw = answer.get('open_value')
+                if value_raw is None:
+                    continue
+                # Convertir a float si es posible, ignorar NaN, vacíos, no numéricos
+                try:
+                    # Si es string, limpiar y convertir
+                    if isinstance(value_raw, str):
+                        value_str = value_raw.strip().replace(",", ".")
+                        if value_str == '' or value_str.lower() == 'nan':
+                            continue
+                        value = float(value_str)
+                    else:
+                        value = float(value_raw)
+                    if math.isnan(value):
+                        continue
+                except Exception:
+                    continue
+                if not (0 <= value <= 100):
+                    continue
+                for minv, maxv, label in ranges:
+                    if minv <= value <= maxv:
+                        counts[label] += 1
+                        total_valid += 1
+                        break
+            if total_valid == 0:
+                return {
+                    "name": "Distribución de satisfacción con el transporte público",
+                    "error": "No se encontraron respuestas válidas (0-100) para la pregunta de satisfacción"
+                }
+            # Calcular porcentajes
+            result = {label: round((count / total_valid) * 100, 2) for label, count in counts.items()}
+            return {
+                "name": "Distribución de satisfacción con el transporte público",
+                "question": satisfaction_question_text,
+                "result": result,
+                "variables": {
+                    "N_respuestas_válidas": total_valid,
+                    "counts": counts
+                }
+            }
+        except Exception as e:
+            return {
+                "name": "Distribución de satisfacción con el transporte público",
+                "error": f"Error al calcular la distribución de satisfacción: {e}"
+            }
+
+    def calculate_main_transport_mode_during_work_distribution(self):
+        """
+        Analiza la distribución del principal medio de transporte utilizado normalmente para desplazamientos durante la jornada laboral.
+        Busca la pregunta de opción múltiple cuyo texto contenga palabras clave como "principal medio de transporte" y "jornada laboral".
+        Devuelve porcentajes y conteos por cada opción.
+        
+        Returns:
+            dict: Resultados del análisis con porcentajes y conteos por opción
+        """
+        try:
+            # Buscar la pregunta relevante
+            questions = self.supabase.table('questions').select('id', 'question_text').eq('company_id', self.company_id).execute()
+            transport_question_id = None
+            transport_question_text = ""
+            keywords = [
+                "principal medio de transporte que utilizas normalmente para realizar desplazamientos durante la jornada laboral",
+                "desplazamientos durante la jornada laboral",
+                "medio de transporte durante la jornada",
+                "transporte que utilizas normalmente durante la jornada"
+            ]
+            for question in questions.data:
+                question_lower = question['question_text'].lower()
+                if any(k.lower() in question_lower for k in keywords):
+                    transport_question_id = question['id']
+                    transport_question_text = question['question_text']
+                    break
+            if not transport_question_id:
+                return {
+                    "name": "Distribución de principal medio de transporte durante la jornada laboral",
+                    "error": "No se encontró ninguna pregunta relacionada con el principal medio de transporte durante la jornada laboral"
+                }
+            # Obtener todas las opciones para esta pregunta
+            options = self.supabase.table('options').select('id', 'option_text').eq('question_id', transport_question_id).eq('company_id', self.company_id).execute()
+            if not options.data:
+                return {
+                    "name": "Distribución de principal medio de transporte durante la jornada laboral",
+                    "error": "No se encontraron opciones para la pregunta de transporte durante la jornada laboral"
+                }
+            # Crear mapa de option_id a option_text
+            option_map = {opt['id']: opt['option_text'] for opt in options.data}
+            # Inicializar contadores
+            transport_counts = {option_text: 0 for option_text in option_map.values()}
+            # Contar respuestas para cada opción
+            for option_id, option_text in option_map.items():
+                count_result = self.supabase.table('answers').select('id', count='exact').eq('option_id', option_id).eq('company_id', self.company_id).execute()
+                transport_counts[option_text] = count_result.count
+            # Calcular total de respuestas válidas
+            total_valid_responses = sum(transport_counts.values())
+            if total_valid_responses == 0:
+                return {
+                    "name": "Distribución de principal medio de transporte durante la jornada laboral",
+                    "error": "No hay respuestas válidas para la pregunta de transporte durante la jornada laboral"
+                }
+            # Calcular porcentajes
+            transport_percentages = {option: round((count / total_valid_responses) * 100, 2) for option, count in transport_counts.items()}
+            return {
+                "name": "Distribución de principal medio de transporte durante la jornada laboral",
+                "question": transport_question_text,
+                "result": transport_percentages,
+                "variables": {
+                    "N_respuestas_válidas": total_valid_responses,
+                    "counts": transport_counts
+                }
+            }
+        except Exception as e:
+            return {
+                "name": "Distribución de principal medio de transporte durante la jornada laboral",
+                "error": f"Error al calcular la distribución: {e}"
+            }
+
+    def calculate_work_trip_frequency_distribution(self):
+        """
+        Calcula la distribución de frecuencia con la que se realizan desplazamientos durante la jornada laboral.
+        Busca la pregunta de opción múltiple cuyo texto contenga palabras clave como "frecuencia" y "desplazamientos durante la jornada laboral".
+        Obtiene dinámicamente las opciones y calcula porcentajes y conteos por cada una.
+        
+        Returns:
+            dict: Resultados del análisis con porcentajes y conteos por opción
+        """
+        try:
+            # Buscar la pregunta relevante
+            questions = self.supabase.table('questions').select('id', 'question_text').eq('company_id', self.company_id).execute()
+            freq_question_id = None
+            freq_question_text = ""
+            keywords = [
+                "con qué frecuencia realizas desplazamientos durante la jornada laboral",
+                "frecuencia desplazamientos jornada laboral",
+                "frecuencia de desplazamientos durante la jornada",
+                "frecuencia de desplazamientos"
+            ]
+            for question in questions.data:
+                question_lower = question['question_text'].lower()
+                if any(k.lower() in question_lower for k in keywords):
+                    freq_question_id = question['id']
+                    freq_question_text = question['question_text']
+                    break
+            if not freq_question_id:
+                return {
+                    "name": "Distribución de frecuencia de desplazamientos durante la jornada laboral",
+                    "error": "No se encontró ninguna pregunta relacionada con la frecuencia de desplazamientos durante la jornada laboral"
+                }
+            # Obtener todas las opciones para esta pregunta
+            options = self.supabase.table('options').select('id', 'option_text').eq('question_id', freq_question_id).eq('company_id', self.company_id).execute()
+            if not options.data:
+                return {
+                    "name": "Distribución de frecuencia de desplazamientos durante la jornada laboral",
+                    "error": "No se encontraron opciones para la pregunta"
+                }
+            option_map = {opt['id']: opt['option_text'] for opt in options.data}
+            counts = {text: 0 for text in option_map.values()}
+            for option_id, option_text in option_map.items():
+                count_result = self.supabase.table('answers').select('id', count='exact').eq('option_id', option_id).eq('company_id', self.company_id).execute()
+                counts[option_text] = count_result.count
+            total = sum(counts.values())
+            if total == 0:
+                return {
+                    "name": "Distribución de frecuencia de desplazamientos durante la jornada laboral",
+                    "error": "No hay respuestas válidas"
+                }
+            percentages = {k: round((v / total) * 100, 2) for k, v in counts.items()}
+            return {
+                "name": "Distribución de frecuencia de desplazamientos durante la jornada laboral",
+                "question": freq_question_text,
+                "result": percentages,
+                "variables": {
+                    "N_respuestas_válidas": total,
+                    "counts": counts
+                }
+            }
+        except Exception as e:
+            return {
+                "name": "Distribución de frecuencia de desplazamientos durante la jornada laboral",
+                "error": f"Error al calcular la distribución: {e}"
+            }
+
+    def calculate_average_trip_distance(self):
+        """
+        Calcula el promedio de kilómetros recorridos en cada trayecto (solo ida) a partir de una pregunta abierta numérica.
+        Convierte los valores a int, ignora vacíos y NaN, y devuelve el promedio y el total de respuestas válidas.
+        
+        Returns:
+            dict: Resultado con el promedio y el total de respuestas válidas
+        """
+        try:
+            import math
+            # Buscar la pregunta relevante
+            questions = self.supabase.table('questions').select('id', 'question_text').eq('company_id', self.company_id).execute()
+            distance_question_id = None
+            distance_question_text = ""
+            keywords = [
+                "cuántos kilómetros de media recorres aproximadamente en cada trayecto",
+                "kilómetros de media por trayecto",
+                "km de media por trayecto",
+                "kilometros de media por trayecto",
+                "media de kilómetros por trayecto"
+            ]
+            for question in questions.data:
+                question_lower = question['question_text'].lower()
+                if any(k in question_lower for k in keywords):
+                    distance_question_id = question['id']
+                    distance_question_text = question['question_text']
+                    break
+            if not distance_question_id:
+                return {
+                    "name": "Promedio de kilómetros por trayecto",
+                    "error": "No se encontró ninguna pregunta relacionada con kilómetros de media por trayecto"
+                }
+            # Obtener respuestas abiertas
+            answers = self.supabase.table('answers').select('open_value', 'respondent_id').eq('question_id', distance_question_id).eq('company_id', self.company_id).execute()
+            values = []
+            for answer in answers.data:
+                value_raw = answer.get('open_value')
+                if value_raw is None:
+                    continue
+                try:
+                    # Limpiar y convertir a int
+                    value_str = str(value_raw).strip().replace(",", ".")
+                    if value_str == '' or value_str.lower() == 'nan':
+                        continue
+                    value = int(float(value_str))
+                    if math.isnan(value):
+                        continue
+                    if value < 0:
+                        continue
+                    values.append(value)
+                except Exception:
+                    continue
+            if not values:
+                return {
+                    "name": "Promedio de kilómetros por trayecto",
+                    "error": "No se encontraron respuestas válidas para la pregunta de kilómetros por trayecto"
+                }
+            promedio = round(sum(values) / len(values), 2)
+            return {
+                "name": "Promedio de kilómetros por trayecto",
+                "question": distance_question_text,
+                "result": promedio,
+                "variables": {
+                    "N_respuestas_válidas": len(values)
+                }
+            }
+        except Exception as e:
+            return {
+                "name": "Promedio de kilómetros por trayecto",
+                "error": f"Error al calcular el promedio: {e}"
+            }
+
+    def calculate_work_trip_reason_distribution(self):
+        """
+        Calcula la distribución de motivos por los que se realizan desplazamientos durante la jornada laboral.
+        Es una pregunta de opción múltiple, obtiene dinámicamente las opciones y cuenta 'otros' aparte si existe.
+        
+        Returns:
+            dict: Resultados del análisis con porcentajes y conteos por motivo, incluyendo 'otros' si corresponde
+        """
+        try:
+            # Buscar la pregunta relevante
+            questions = self.supabase.table('questions').select('id', 'question_text').eq('company_id', self.company_id).execute()
+            reason_question_id = None
+            reason_question_text = ""
+            keywords = [
+                "motivo por el que realizas desplazamientos durante la jornada laboral",
+                "motivo desplazamientos jornada laboral",
+                "razón desplazamientos jornada laboral",
+                "por qué realizas desplazamientos durante la jornada laboral"
+            ]
+            for question in questions.data:
+                question_lower = question['question_text'].lower()
+                if any(k in question_lower for k in keywords):
+                    reason_question_id = question['id']
+                    reason_question_text = question['question_text']
+                    break
+            if not reason_question_id:
+                return {
+                    "name": "Distribución de motivos de desplazamiento durante la jornada laboral",
+                    "error": "No se encontró ninguna pregunta relacionada con el motivo de desplazamientos durante la jornada laboral"
+                }
+            # Obtener todas las opciones para esta pregunta
+            options = self.supabase.table('options').select('id', 'option_text').eq('question_id', reason_question_id).eq('company_id', self.company_id).execute()
+            if not options.data:
+                return {
+                    "name": "Distribución de motivos de desplazamiento durante la jornada laboral",
+                    "error": "No se encontraron opciones para la pregunta"
+                }
+            option_map = {opt['id']: opt['option_text'] for opt in options.data}
+            counts = {text: 0 for text in option_map.values()}
+            otros_option_ids = [oid for oid, text in option_map.items() if text.strip().lower() in ["otro", "otros", "otra", "otras", "other"]]
+            otros_count = 0
+            for option_id, option_text in option_map.items():
+                answer_result = self.supabase.table('answers').select('id', 'open_value').eq('option_id', option_id).eq('company_id', self.company_id).execute()
+                count = len(answer_result.data)
+                # Si es opción otros, contar aparte si hay texto en open_value
+                if option_id in otros_option_ids:
+                    for answer in answer_result.data:
+                        if answer.get('open_value') and str(answer.get('open_value')).strip() != '':
+                            otros_count += 1
+                    counts[option_text] = count
+                else:
+                    counts[option_text] = count
+            total = sum(counts.values())
+            if total == 0:
+                return {
+                    "name": "Distribución de motivos de desplazamiento durante la jornada laboral",
+                    "error": "No hay respuestas válidas"
+                }
+            percentages = {k: round((v / total) * 100, 2) for k, v in counts.items()}
+            # Si hay opción otros, agregar el conteo de respuestas con texto en open_value
+            if otros_option_ids:
+                percentages['Otros (con texto)'] = round((otros_count / total) * 100, 2)
+            return {
+                "name": "Distribución de motivos de desplazamiento durante la jornada laboral",
+                "question": reason_question_text,
+                "result": percentages,
+                "variables": {
+                    "N_respuestas_válidas": total,
+                    "counts": counts,
+                    "otros_con_texto": otros_count
+                }
+            }
+        except Exception as e:
+            return {
+                "name": "Distribución de motivos de desplazamiento durante la jornada laboral",
+                "error": f"Error al calcular la distribución: {e}"
+            }
+
+    def calculate_replaceable_trips_distribution(self):
+        """
+        Calcula la distribución de respuestas sobre cuántos trayectos podrían reemplazarse por videollamada u otro tipo de comunicación.
+        Es una pregunta de opción múltiple, obtiene dinámicamente las opciones.
+        
+        Returns:
+            dict: Resultados del análisis con porcentajes y conteos por opción
+        """
+        try:
+            # Buscar la pregunta relevante
+            questions = self.supabase.table('questions').select('id', 'question_text').eq('company_id', self.company_id).execute()
+            replaceable_question_id = None
+            replaceable_question_text = ""
+            keywords = [
+                "cuántos podrías reemplazar por una videollamada",
+                "trayectos que podrías reemplazar por videollamada",
+                "trayectos reemplazables por videollamada",
+                "trayectos que podrías reemplazar por otro tipo de comunicación",
+                "trayectos reemplazables durante la jornada laboral"
+            ]
+            for question in questions.data:
+                question_lower = question['question_text'].lower()
+                if any(k in question_lower for k in keywords):
+                    replaceable_question_id = question['id']
+                    replaceable_question_text = question['question_text']
+                    break
+            if not replaceable_question_id:
+                return {
+                    "name": "Distribución de trayectos reemplazables por videollamada",
+                    "error": "No se encontró ninguna pregunta relacionada con trayectos reemplazables por videollamada"
+                }
+            # Obtener todas las opciones para esta pregunta
+            options = self.supabase.table('options').select('id', 'option_text').eq('question_id', replaceable_question_id).eq('company_id', self.company_id).execute()
+            if not options.data:
+                return {
+                    "name": "Distribución de trayectos reemplazables por videollamada",
+                    "error": "No se encontraron opciones para la pregunta"
+                }
+            option_map = {opt['id']: opt['option_text'] for opt in options.data}
+            counts = {text: 0 for text in option_map.values()}
+            for option_id, option_text in option_map.items():
+                count_result = self.supabase.table('answers').select('id').eq('option_id', option_id).eq('company_id', self.company_id).execute()
+                counts[option_text] = len(count_result.data)
+            total = sum(counts.values())
+            if total == 0:
+                return {
+                    "name": "Distribución de trayectos reemplazables por videollamada",
+                    "error": "No hay respuestas válidas"
+                }
+            percentages = {k: round((v / total) * 100, 2) for k, v in counts.items()}
+            return {
+                "name": "Distribución de trayectos reemplazables por videollamada",
+                "question": replaceable_question_text,
+                "result": percentages,
+                "variables": {
+                    "N_respuestas_válidas": total,
+                    "counts": counts
+                }
+            }
+        except Exception as e:
+            return {
+                "name": "Distribución de trayectos reemplazables por videollamada",
+                "error": f"Error al calcular la distribución: {e}"
+            }
+
+    def calculate_pedestrian_environment_rating(self):
+        """
+        Calcula el promedio de valoración del entorno cercano al centro de trabajo para ser utilizado por peatones.
+        Es una pregunta abierta numérica (entero). Convierte a int, ignora vacíos y NaN, y devuelve el promedio y el total de respuestas válidas.
+        
+        Returns:
+            dict: Resultado con el promedio y el total de respuestas válidas
+        """
+        try:
+            import math
+            # Buscar la pregunta relevante
+            questions = self.supabase.table('questions').select('id', 'question_text').eq('company_id', self.company_id).execute()
+            rating_question_id = None
+            rating_question_text = ""
+            keywords = [
+                "cómo valorarías el entorno cercano al centro de trabajo para ser utilizado por peatones",
+                "valoración entorno peatones centro de trabajo",
+                "valoración entorno peatones",
+                "valoración entorno centro de trabajo",
+                "valoracion entorno peatones"
+            ]
+            for question in questions.data:
+                question_lower = question['question_text'].lower()
+                if any(k in question_lower for k in keywords):
+                    rating_question_id = question['id']
+                    rating_question_text = question['question_text']
+                    break
+            if not rating_question_id:
+                return {
+                    "name": "Promedio de valoración del entorno para peatones",
+                    "error": "No se encontró ninguna pregunta relacionada con la valoración del entorno para peatones"
+                }
+            # Obtener respuestas abiertas
+            answers = self.supabase.table('answers').select('open_value', 'respondent_id').eq('question_id', rating_question_id).eq('company_id', self.company_id).execute()
+            values = []
+            for answer in answers.data:
+                value_raw = answer.get('open_value')
+                if value_raw is None:
+                    continue
+                try:
+                    value_str = str(value_raw).strip().replace(",", ".")
+                    if value_str == '' or value_str.lower() == 'nan':
+                        continue
+                    value = int(float(value_str))
+                    if math.isnan(value):
+                        continue
+                    if value < 0:
+                        continue
+                    values.append(value)
+                except Exception:
+                    continue
+            if not values:
+                return {
+                    "name": "Promedio de valoración del entorno para peatones",
+                    "error": "No se encontraron respuestas válidas para la valoración del entorno para peatones"
+                }
+            promedio = round(sum(values) / len(values), 2)
+            return {
+                "name": "Promedio de valoración del entorno para peatones",
+                "question": rating_question_text,
+                "result": promedio,
+                "variables": {
+                    "N_respuestas_válidas": len(values)
+                }
+            }
+        except Exception as e:
+            return {
+                "name": "Promedio de valoración del entorno para peatones",
+                "error": f"Error al calcular el promedio: {e}"
+            }
+
+    def analyze_open_proposals_for_mobility(self, report_generator):
+        """
+        Analiza las respuestas abiertas a la pregunta de propuestas para mejorar la movilidad al centro de trabajo usando LLM.
+        Obtiene las respuestas y llama a un método de ReportGenerator que usará un prompt especializado.
+        El resultado es el análisis generado por el LLM, en el mismo formato estándar que los otros métodos.
+        
+        Args:
+            report_generator: Instancia de ReportGenerator para llamar al LLM
+        Returns:
+            dict: Resultado con el análisis generado por el LLM y el total de respuestas válidas
+        """
+        try:
+            # Buscar la pregunta relevante
+            questions = self.supabase.table('questions').select('id', 'question_text').eq('company_id', self.company_id).execute()
+            proposals_question_id = None
+            proposals_question_text = ""
+            keywords = [
+                "qué otras propuestas plantearías para mejorar la movilidad al centro de trabajo",
+                "otras propuestas para mejorar la movilidad",
+                "propuestas para mejorar la movilidad"
+            ]
+            for question in questions.data:
+                question_lower = question['question_text'].lower()
+                if any(k in question_lower for k in keywords):
+                    proposals_question_id = question['id']
+                    proposals_question_text = question['question_text']
+                    break
+            if not proposals_question_id:
+                return {
+                    "name": "Análisis de propuestas abiertas para mejorar la movilidad",
+                    "error": "No se encontró ninguna pregunta relacionada con propuestas abiertas para mejorar la movilidad"
+                }
+            # Obtener respuestas abiertas
+            answers = self.supabase.table('answers').select('open_value', 'respondent_id').eq('question_id', proposals_question_id).eq('company_id', self.company_id).execute()
+            responses = []
+            for answer in answers.data:
+                value_raw = answer.get('open_value')
+                if value_raw is None:
+                    continue
+                value_str = str(value_raw).strip()
+                if value_str == '' or value_str.lower() == 'nan':
+                    continue
+                responses.append(value_str)
+            if not responses:
+                return {
+                    "name": "Análisis de propuestas abiertas para mejorar la movilidad",
+                    "error": "No se encontraron respuestas válidas para la pregunta de propuestas abiertas"
+                }
+            # Llamar al generador de reportes para analizar las propuestas
+            llm_analysis, cost = report_generator.analyze_open_mobility_proposals(responses)
+            return {
+                "name": "Análisis de propuestas abiertas para mejorar la movilidad",
+                "question": proposals_question_text,
+                "result": llm_analysis,
+                "variables": {
+                    "N_respuestas_válidas": len(responses),
+                    "costo_llm": cost
+                }
+            }
+        except Exception as e:
+            return {
+                "name": "Análisis de propuestas abiertas para mejorar la movilidad",
+                "error": f"Error al analizar propuestas abiertas: {e}"
+            }
+
+    def calculate_cycling_barriers_percentage(self):
+        """
+        Calcula el porcentaje por barrera al uso de bicicleta o patinete eléctrico.
+        Es una pregunta de opción múltiple, obtiene dinámicamente las opciones y cuenta 'otros' aparte si existe.
+        
+        Returns:
+            dict: Resultados del análisis con porcentajes y conteos por barrera, incluyendo 'otros' si corresponde
+        """
+        try:
+            # Buscar la pregunta relevante
+            questions = self.supabase.table('questions').select('id', 'question_text').eq('company_id', self.company_id).execute()
+            barriers_question_id = None
+            barriers_question_text = ""
+            keywords = [
+                "indica las principales razones por las que no utilizas la bicicleta o patinete eléctrico",
+                "razones por las que no utilizas la bicicleta",
+                "barreras al uso de bicicleta",
+                "por qué no usas bicicleta",
+                "no utilizas la bicicleta"
+            ]
+            for question in questions.data:
+                question_lower = question['question_text'].lower()
+                if any(k.lower() in question_lower for k in keywords):
+                    barriers_question_id = question['id']
+                    barriers_question_text = question['question_text']
+                    break
+            if not barriers_question_id:
+                return {
+                    "name": "Porcentaje por barrera al uso de bicicleta/patinete",
+                    "error": "No se encontró ninguna pregunta relacionada con barreras al uso de bicicleta o patinete"
+                }
+            # Obtener todas las opciones para esta pregunta
+            options = self.supabase.table('options').select('id', 'option_text').eq('question_id', barriers_question_id).eq('company_id', self.company_id).execute()
+            if not options.data:
+                return {
+                    "name": "Porcentaje por barrera al uso de bicicleta/patinete",
+                    "error": "No se encontraron opciones para la pregunta"
+                }
+            option_map = {opt['id']: opt['option_text'] for opt in options.data}
+            counts = {text: 0 for text in option_map.values()}
+            otros_option_ids = [oid for oid, text in option_map.items() if text.strip().lower() in ["otro", "otros", "otra", "otras", "other"]]
+            otros_count = 0
+            for option_id, option_text in option_map.items():
+                answer_result = self.supabase.table('answers').select('id', 'open_value').eq('option_id', option_id).eq('company_id', self.company_id).execute()
+                count = len(answer_result.data)
+                # Si es opción otros, contar aparte si hay texto en open_value
+                if option_id in otros_option_ids:
+                    for answer in answer_result.data:
+                        if answer.get('open_value') and str(answer.get('open_value')).strip() != '':
+                            otros_count += 1
+                    counts[option_text] = count
+                else:
+                    counts[option_text] = count
+            
+            # CORRECCIÓN: Calcular el total de respondentes únicos, no la suma de opciones
+            unique_respondents = set()
+            for option_id in option_map.keys():
+                answers = self.supabase.table('answers') \
+                    .select('respondent_id') \
+                    .eq('option_id', option_id) \
+                    .eq('company_id', self.company_id) \
+                    .execute()
+                for answer in answers.data:
+                    unique_respondents.add(answer['respondent_id'])
+            
+            total = len(unique_respondents)
+            
+            if total == 0:
+                return {
+                    "name": "Porcentaje por barrera al uso de bicicleta/patinete",
+                    "error": "No hay respuestas válidas"
+                }
+            percentages = {k: round((v / total) * 100, 2) for k, v in counts.items()}
+            # Si hay opción otros, agregar el conteo de respuestas con texto en open_value
+            if otros_option_ids:
+                percentages['Otros (con texto)'] = round((otros_count / total) * 100, 2)
+            return {
+                "name": "Porcentaje por barrera al uso de bicicleta/patinete",
+                "question": barriers_question_text,
+                "result": percentages,
+                "variables": {
+                    "N_respuestas_válidas": total,
+                    "counts": counts,
+                    "otros_con_texto": otros_count
+                }
+            }
+        except Exception as e:
+            return {
+                "name": "Porcentaje por barrera al uso de bicicleta/patinete",
+                "error": f"Error al calcular la distribución: {e}"
             }

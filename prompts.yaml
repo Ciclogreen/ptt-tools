@@ -148,50 +148,66 @@ mobility_report_prompt: |
   ## Structure to Produce (all sections are mandatory)
 
   ### Introducción
-  - Comienza presentando el método utilizado para recopilar la información (encuesta al personal).  
-  - Describe la estructura de la encuesta y el tiempo medio de cumplimentación (7 min).  
-  - Explica, de forma general, las acciones de difusión (correo electrónico, cartelería con código QR, sala habilitada).  
-  - Menciona la evaluación del alcance y el relanzamiento para aumentar la participación.  
-  - Cierra con un resumen del nivel de participación logrado y su representatividad.  
+  - Texto fijo de introducion:
+    "Para el análisis de los patrones de movilidad al centro de trabajo se procedió al lanzamiento de una encuesta dirigida a las personas trabajadoras, con el fin de recabar la mayor cantidad posible de información sobre sus desplazamientos habituales y las motivaciones que podrían acelerar o frenar el cambio de hábitos hacia el uso de medios de transporte más sostenibles.
+
+    La encuesta se divide en una serie de secciones con preguntas organizadas por temáticas, incluyendo un total de 52 preguntas. Algunas de las secciones estaban disponibles solo a personas que respondieron afirmativamente a una pregunta anterior. Se necesitó 8 minutos de media para responder la encuesta.
+
+    La encuesta se hizo llegar a la plantilla de empleado/as, adaptando su formato a las actividades y características del centro de trabajo. La difusión se llevó a cabo a través de correo electrónico y cartelería física. En esta última, se incluyó un código QR para facilitar el acceso a la encuesta desde el teléfono móvil y conseguir así una mayor participación. Además se habilitó una sala en la zona de producción para que las personas pudieran rellenar la encuesta durante la jornada laboral.
+
+    Pasadas unas semanas se hizo una evaluación del alcance de la encuesta y se volvió a comunicar su lanzamiento para ampliar la participación."
+
+  - Texto variable de introducion a redactar basado en datos (último párrafo): 
+    "Tras el lanzamiento de la encuesta se recogieron un total de X respuestas, lo que se traduce en una participación del Y%, una muestra representativa que permite hacer un análisis válido de los patrones y demanda de movilidad al centro de trabajo. La encuesta se completó de forma anónima por los trabajadores/as."
 
   ### Datos generales
+
   - Expone el patrón residencial destacando los municipios más frecuentes.  
   - Presenta la distribución por género.  
   - Señala el grupo de edad predominante.  
+  - Describe la distribución por departamento.  
   - Describe la condición laboral mayoritaria.  
+  - Resume la distribución por días de trabajo semanal.
   - Resume la frecuencia de teletrabajo.  
 
   ### Tu viaje habitual al trabajo
   - Declara el reparto modal de los desplazamientos.  
   - Cuando exista combinación de medios, indica la prevalencia del coche sin acompañante.  
-  - Detalla las distancias diarias recorridas por bandas.  
-  - Informa de los tiempos de viaje de ida y vuelta.  
+  - Resume la distribución de las combinaciones de transporte mas frecuentes.
+  - Informa de los porcentaje de desplazamientos por tramo de tiempo de viaje de ida, los rangos mas frecuentes.
+  - Detalla los porcentajes de desplazamientos por tramo de distancia de viaje de ida, los rangos mas frecuentes.
   - Cuantifica los desplazamientos en misión: incidencia, frecuencias y modos empleados.  
+  - En cuanto a los desplasamientos durante la jornada laboral resume:
+    - la distribución de los principales medios de transporte durante la jornada laboral.
+    - la frecuencia de desplazamientos durante la jornada laboral.
+    - el promedio de kilometros recorridos en cada trayecto.
+    - los motivos mas frecuentes por los que se realizan desplazamientos durante la jornada laboral.
+    - la distribución de los trayectos reemplazables por videollamada u otros medios ("ninguno" es una opción válida).
 
   ### Coche y moto
-  - Introduce el análisis de quienes usan vehículo privado para acudir al trabajo.  
+  - Introduce el análisis de quienes usan vehículo privado para acudir al trabajo y por misión.  
   - Desglosa los tipos de motor presentes en la flota.  
+  - Resume la distribución de la ocupación del vehículo cuando se comparte.
   - Indica la intención futura de adquirir vehículos eléctricos.  
   - Describe las condiciones de estacionamiento y la percepción de problemas.  
-  - Presenta las barreras declaradas al uso de la bicicleta.  
-  - Resume las barreras al transporte público.  
+  - Resume las barreras al transporte público y luego resume los tiempos mas frecuentes que tardan en el desplazamiento en ese medio.
+  - Presenta las barreras declaradas al uso de la bicicleta mas relevantes o frecuentes.  
 
   ### Transporte público
   - Señala la finalidad de esta subsección: caracterizar a quienes usan transporte público de forma habitual.  
-  - Muestra la puntuación media de satisfacción del servicio.  
+  - Resume la puntuación de satisfacción del servicio.  
   - Enumera los principales motivos de elección.  
 
   ### Mejora de la movilidad
-  - Introduce el foco en la predisposición al cambio y en las medidas prioritarias.  
   - Introduce el foco en la predisposición al cambio y en las medidas prioritarias.  
   - Cuantifica la disposición y la práctica actual de coche compartido.  
   - Resume las barreras percibidas para compartir coche, destacando la coordinación de horarios como obstáculo principal.  
   - Ordena las medidas que harían más atractivo el coche compartido: incentivos, aplicación móvil y otras propuestas.  
   - Indica el conocimiento de líneas de transporte público existentes.  
   - Expone las prioridades de mejora del transporte público.  
-  - Presenta el grado de conocimiento de vías ciclistas y las mejoras deseadas en incentivos, infraestructura e instalaciones.  
-  - Comunica la valoración del entorno peatonal.  
-  - Concluye con una síntesis de las propuestas abiertas, si está disponible.  
+  - Presenta el grado de conocimiento de vías ciclistas y detalla las opciones que lo harian a la bicicleta mas atractiva.
+  - Comunica la valoración del entorno cercano al centro de trabajo para ser utilizado por peatones.  
+  - Concluye con una síntesis del analisis de las propuestas abiertas para mejorar la movilidad, si está disponible.  
 
   ## Internal checklist
   - The output must be a redaction in smooth, professional Spanish without inventing or inferring any information.
@@ -251,3 +267,39 @@ mobility_verification_prompt: |
   analysis_results: {analysis_results}
 
   mobility_report: {mobility_report}
+
+
+open_mobility_proposals_analysis_prompt: |
+  Eres un analista experto en movilidad sostenible y comportamiento organizacional. A continuación tienes una lista de propuestas abiertas de usuarios para mejorar la movilidad al centro de trabajo. Tu tarea es realizar un análisis 360° de las respuestas, extrayendo el máximo valor para la toma de decisiones estratégicas.
+
+  **1. DAFO**
+  - Identifica Debilidades, Amenazas, Fortalezas y Oportunidades presentes en las propuestas y en el sentir de los usuarios.
+
+  **2. Temas y patrones**
+  - Extrae los temas, necesidades y propuestas más relevantes, repetidas o innovadoras.
+  - Identifica patrones de insatisfacción, barreras y deseos comunes.
+
+  **3. Análisis de sentimiento**
+  - Evalúa el tono general de las respuestas (positivo, negativo, neutro, mixto).
+  - Resume el sentir de los usuarios respecto a la movilidad y los cambios.
+
+  **4. Oportunidades y palancas de cambio**
+  - Señala las oportunidades de mejora más factibles y las palancas de cambio con mayor impacto potencial.
+  - Sugiere qué tipo de intervención podría generar mayor aceptación y resultados.
+
+  **5. Visión de usuario y cultura**
+  - Analiza la disposición al cambio, el nivel de compromiso y las resistencias culturales detectadas.
+  - ¿Qué valores, miedos o expectativas subyacen en las propuestas?
+
+  **6. Recomendaciones accionables**
+  - Propón recomendaciones concretas y priorizadas para responsables de movilidad, basadas en el análisis anterior.
+  - Si es posible, sugiere quick-wins y medidas de mayor plazo.
+
+  **7. Resumen ejecutivo**
+  - Resume en un párrafo final los principales hallazgos y el potencial de impacto de las propuestas.
+
+  IMPORTANTE: Piensa paso a paso.
+  ---
+  
+  Propuestas de los usuarios:
+  {responses_json}

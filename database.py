@@ -8,7 +8,7 @@ def init_supabase():
         key = st.secrets["supabase"]["key"]
         return create_client(url, key)
     except Exception as e:
-        st.error(f"Error al conectar con Supabase: {e}")
+        st.error(f"Error connecting to Supabase: {e}")
         return None
 
 def get_company_id(supabase, company_name, create_if_not_exists=True):
@@ -181,12 +181,10 @@ def save_survey_data_batch(supabase, json_data, company_id):
                 question_index = qa['index']
                 answer = qa['answer']
                 
-                # Determine question type
-                question_type = 'open'
-                if isinstance(answer, list):
-                    question_type = 'multi'
-                elif isinstance(answer, str) and answer.strip():
-                    question_type = 'single'
+                # Determine question type based on answer structure
+                # - Una lista significa que es tipo "multi" (múltiples opciones)
+                # - Un string significa que es tipo "open" (respuesta abierta)
+                question_type = 'multi' if isinstance(answer, list) else 'open'
                 
                 # Store question info
                 if question_text not in all_questions:
@@ -195,9 +193,9 @@ def save_survey_data_batch(supabase, json_data, company_id):
                         'type': question_type
                     }
                 
-                # Store option info for non-open questions
-                if question_type != 'open':
-                    answers_list = [answer] if question_type == 'single' else answer
+                # Store option info for multi-choice questions
+                if question_type == 'multi':
+                    answers_list = answer  # Ya es una lista
                     for ans in answers_list:
                         # Convertir la respuesta a string para asegurar que sea hashable
                         option_text = str(ans) if ans is not None else ""
@@ -214,6 +212,7 @@ def save_survey_data_batch(supabase, json_data, company_id):
             })
         
         # Batch insert questions (will upsert based on unique constraint)
+        question_id_map = {}  # question_text -> question_id
         if questions_batch:
             questions_result = supabase.table('questions').upsert(
                 questions_batch,
@@ -221,7 +220,6 @@ def save_survey_data_batch(supabase, json_data, company_id):
             ).execute()
             
             # Create mapping from question_text to question_id
-            question_id_map = {}
             for question in questions_result.data:
                 question_id_map[question['question_text']] = question['id']
         
@@ -250,6 +248,7 @@ def save_survey_data_batch(supabase, json_data, company_id):
         # Step 4: Process respondents and answers in batches
         # Process in chunks to avoid very large payloads
         batch_size = 50
+        
         for i in range(0, len(json_data), batch_size):
             current_batch = json_data[i:i+batch_size]
             
@@ -264,6 +263,7 @@ def save_survey_data_batch(supabase, json_data, company_id):
             
             # Now process answers
             all_answers = []
+            
             for idx, respondent_data in enumerate(current_batch):
                 respondent_id = respondents_result.data[idx]['id']
                 
@@ -286,13 +286,12 @@ def save_survey_data_batch(supabase, json_data, company_id):
                             'question_id': question_id,
                             'open_value': str(answer) if answer is not None else ''
                         })
-                    else:
-                        answers_list = [answer] if question_type == 'single' else answer
-                        
-                        for ans in answers_list:
+                    else:  # Multi-choice question (todas las respuestas de opciones ahora son listas)
+                        for ans in answer:
                             # Convertir la respuesta a string para compatibilidad con las claves del mapa de opciones
                             ans_str = str(ans) if ans is not None else ""
                             option_id = option_id_map.get((question_id, ans_str))
+                            
                             if option_id:
                                 all_answers.append({
                                     'company_id': company_id,

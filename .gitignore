@@ -4,3 +4,4 @@ csv/**
 .streamlit/secrets.toml
 __pycache__/**
 docs/**
+test.py

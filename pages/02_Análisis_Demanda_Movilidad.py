@@ -20,7 +20,7 @@ def init_session_state():
         st.session_state.analysis_results = []
         
     if 'total_employees' not in st.session_state:
-        st.session_state.total_employees = 100
+        st.session_state.total_employees = 600
     
     # Inicializar conexión Supabase
     if 'supabase' not in st.session_state:
@@ -66,21 +66,25 @@ def perform_analysis(company_name, total_employees, company_id, supabase, status
         gender_distribution = analytics.calculate_gender_distribution()
         postal_code_distribution = analytics.calculate_postal_code_distribution()
         age_distribution = analytics.calculate_age_distribution()
-        analysis_results.extend([gender_distribution, postal_code_distribution, age_distribution])
+        department_distribution = analytics.calculate_department_distribution()
+        analysis_results.extend([gender_distribution, postal_code_distribution, age_distribution, department_distribution])
         
         st.write("🕰️ Analizando patrones de trabajo...")
         workday_distribution = analytics.calculate_workday_type_distribution()
+        workdays_distribution = analytics.calculate_workdays_distribution()
         telework_distribution = analytics.calculate_telework_distribution()
-        analysis_results.extend([workday_distribution, telework_distribution])
+        analysis_results.extend([workday_distribution, workdays_distribution, telework_distribution])
         
         st.write("🚗 Analizando modos de transporte...")
         transport_mode_distribution = analytics.calculate_transport_mode_distribution()
         multimodal_workers_percentage = analytics.calculate_multimodal_workers_percentage()
+        transport_combinations = analytics.calculate_transport_combination_distribution()
         distance_range_distribution = analytics.calculate_distance_range_distribution()
         travel_time_distribution = analytics.calculate_travel_time_distribution()
         analysis_results.extend([
             transport_mode_distribution, 
             multimodal_workers_percentage,
+            transport_combinations,
             distance_range_distribution,
             travel_time_distribution
         ])
@@ -89,12 +93,26 @@ def perform_analysis(company_name, total_employees, company_id, supabase, status
         business_trips_percentage = analytics.calculate_business_trips_percentage()
         business_trips_own_car_percentage = analytics.calculate_business_trips_own_car_percentage()
         engine_type_percentage = analytics.calculate_engine_type_percentage()
+        car_occupancy_distribution = analytics.calculate_car_occupancy_distribution()
         ev_purchase_intention_percentage = analytics.calculate_ev_purchase_intention_percentage()
+        work_trip_frequency_distribution = analytics.calculate_work_trip_frequency_distribution()
+        main_transport_mode_during_work_distribution = analytics.calculate_main_transport_mode_during_work_distribution()
+        average_trip_distance_during_work = analytics.calculate_average_trip_distance()
+        work_trip_reason_distribution = analytics.calculate_work_trip_reason_distribution()
+        replaceable_trip_distribution = analytics.calculate_replaceable_trips_distribution()
+        cycling_barriers_percentage = analytics.calculate_cycling_barriers_percentage()
         analysis_results.extend([
             business_trips_percentage,
             business_trips_own_car_percentage,
             engine_type_percentage,
-            ev_purchase_intention_percentage
+            car_occupancy_distribution,
+            ev_purchase_intention_percentage,    
+            work_trip_frequency_distribution,
+            main_transport_mode_during_work_distribution,
+            average_trip_distance_during_work,
+            work_trip_reason_distribution,
+            replaceable_trip_distribution,      
+            cycling_barriers_percentage
         ])
         
         st.write("🅿️ Analizando aparcamiento...")
@@ -104,29 +122,38 @@ def perform_analysis(company_name, total_employees, company_id, supabase, status
         
         st.write("🚌 Analizando transporte público...")
         public_transport_barriers_percentage = analytics.calculate_public_transport_barriers_percentage()
+        public_transport_time_distribution = analytics.calculate_public_transport_estimated_time_distribution()
         public_transport_motivations_percentage = analytics.calculate_public_transport_motivations_percentage()
         public_transport_lines_awareness_percentage = analytics.calculate_public_transport_lines_awareness_percentage()
         public_transport_improvement_factors_percentage = analytics.calculate_public_transport_improvement_factors_percentage()
+        public_transport_satisfaction = analytics.calculate_public_transport_satisfaction_distribution()
         analysis_results.extend([
             public_transport_barriers_percentage,
+            public_transport_time_distribution,
             public_transport_motivations_percentage,
             public_transport_lines_awareness_percentage,
-            public_transport_improvement_factors_percentage
+            public_transport_improvement_factors_percentage,
+            public_transport_satisfaction
         ])
-        
+
+
         st.write("🚲 Analizando compartir coche y ciclismo...")
         car_sharing_willingness_percentage = analytics.calculate_car_sharing_willingness_percentage()
         cycling_routes_awareness_percentage = analytics.calculate_cycling_routes_awareness_percentage()
         cycling_improvement_factors_percentage = analytics.calculate_cycling_improvement_factors_percentage()
+        pedestrian_environment_rating = analytics.calculate_pedestrian_environment_rating()
+        open_proposals_for_mobility = analytics.analyze_open_proposals_for_mobility(ReportGenerator(model="openai/gpt-4o-mini"))
         analysis_results.extend([
             car_sharing_willingness_percentage,
             cycling_routes_awareness_percentage,
-            cycling_improvement_factors_percentage
+            cycling_improvement_factors_percentage,
+            pedestrian_environment_rating,
+            open_proposals_for_mobility
         ])
         
         # Generar informe automáticamente
         st.write("📝 Generando informe de movilidad...")
-        generator = ReportGenerator(model="openai/o4-mini")
+        generator = ReportGenerator()
         report, cost = generator.generate_mobility_report(analysis_results, company_name)
         
         if report:
@@ -169,7 +196,7 @@ def main():
     with col1:
         # Input para el nombre de la compañía
         company_name = st.text_input("Nombre de la compañía", 
-                                     value=st.session_state.company_name or "ACME",
+                                     value=st.session_state.company_name or "imm",
                                      key="company_input")
         
     with col2:
@@ -329,7 +356,7 @@ def generate_mobility_report(analysis_results, company_name):
     try:
         with st.status("⏳ Generando informe de movilidad...") as status:
             # Inicializar el generador de informes
-            generator = ReportGenerator(model="openai/o4-mini")
+            generator = ReportGenerator()
             
             # Generar el informe (la API key se tomará automáticamente de st.secrets)
             report, cost = generator.generate_mobility_report(analysis_results, company_name)

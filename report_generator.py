@@ -461,3 +461,24 @@ class ReportGenerator:
         except Exception as e:
             logger.error(f"Error al verificar informe de movilidad: {e}")
             return f"Error al verificar informe de movilidad: {e}", 0.0
+
+    def analyze_open_mobility_proposals(self, responses: list) -> tuple:
+        """
+        Analiza una lista de propuestas abiertas para mejorar la movilidad usando LLM y un prompt especializado.
+        El prompt pide un análisis DAFO, sentimiento, oportunidades y palancas de cambio.
+        Args:
+            responses: Lista de respuestas abiertas (strings)
+        Returns:
+            Tuple (análisis_llm, costo_llm)
+        """
+        try:
+            import json
+            # Preparar el prompt especializado (asumimos que siempre existe)
+            prompt_template = self.prompts.get("open_mobility_proposals_analysis_prompt", "")
+            responses_json = json.dumps(responses, ensure_ascii=False, indent=2)
+            filled_prompt = prompt_template.format(responses_json=responses_json)
+            # Llamar al LLM
+            analysis, cost = self._call_llm_api(filled_prompt)
+            return analysis, cost
+        except Exception as e:
+            return f"Error al analizar propuestas abiertas con LLM: {e}", 0.0
