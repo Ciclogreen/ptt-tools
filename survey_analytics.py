@@ -90,7 +90,7 @@ class SurveyAnalytics:
             gender_keywords = ["género", "genero", "sexo", "gender", "sex"]
             for question in questions.data:
                 question_text = question['question_text'].lower()
-                if any(keyword in question_text for keyword in gender_keywords):
+                if any(keyword.lower() in question_text for keyword in gender_keywords):
                     gender_question_id = question['id']
                     gender_question_text = question['question_text']
                     break
@@ -272,10 +272,10 @@ class SurveyAnalytics:
             age_question_text = ""
             
             # Search for age question using keywords
-            age_keywords = ["edad", "age", "rango de edad", "age range", "años", "years"]
+            age_keywords = ["rango de edad", "edades"]
             for question in questions.data:
                 question_text = question['question_text'].lower()
-                if any(keyword in question_text for keyword in age_keywords):
+                if any(keyword.lower() in question_text for keyword in age_keywords):
                     age_question_id = question['id']
                     age_question_text = question['question_text']
                     
@@ -380,10 +380,10 @@ class SurveyAnalytics:
             workday_question_text = ""
             
             # Search for workday type question using keywords
-            workday_keywords = ["jornada", "horario", "schedule", "workday", "work day", "horario laboral", "work schedule"]
+            workday_keywords = ["tipo de jornada laboral", "tipo de jornada"]
             for question in questions.data:
                 question_text = question['question_text'].lower()
-                if any(keyword in question_text for keyword in workday_keywords):
+                if any(keyword.lower() in question_text for keyword in workday_keywords):
                     workday_question_id = question['id']
                     workday_question_text = question['question_text']
                     break
@@ -469,12 +469,11 @@ class SurveyAnalytics:
             telework_question_text = ""
             
             # Search for telework question using keywords
-            telework_keywords = [
-                "teletrabajo", "remoto", "remote", "telework", "trabajo remoto", "trabajo desde casa", "work from home", "wfh", "teletrabajas"
-            ]
+            telework_keywords = [ "días teletrabajas a la semana", "días teletrabajas", "trabajo remoto", "trabajas desde casa"]
+
             for question in questions.data:
                 question_text = question['question_text'].lower()
-                if any(keyword in question_text for keyword in telework_keywords):
+                if any(keyword.lower() in question_text for keyword in telework_keywords):
                     telework_question_id = question['id']
                     telework_question_text = question['question_text']
                     break
@@ -582,14 +581,12 @@ class SurveyAnalytics:
             
             # Search for transport mode question using keywords
             transport_keywords = [
-                "principal medio de transporte",
-                "modo de transporte", "transport mode", "medio de transporte", 
-                "desplazamiento", "commute", "viaje al trabajo", "trip to work",
-                "movilidad", "mobility", "cómo llegas", "how do you get"
+                "principal medio de transporte que usas desde tu casa a tu centro",
+                "principal medio de transporte"
             ]
             for question in questions.data:
                 question_text = question['question_text'].lower()
-                if any(keyword in question_text for keyword in transport_keywords):
+                if any(keyword.lower() in question_text for keyword in transport_keywords):
                     transport_question_id = question['id']
                     transport_question_text = question['question_text']
                     break
@@ -696,7 +693,7 @@ class SurveyAnalytics:
                 
                 # Check each category
                 for category, keywords in categories.items():
-                    if any(keyword in mode_lower for keyword in keywords):
+                    if any(keyword.lower() in mode_lower for keyword in keywords):
                         grouped_percentages[category] += percentage
                         categorized = True
                         break
@@ -779,7 +776,7 @@ class SurveyAnalytics:
             ]
             for question in questions.data:
                 question_text = question['question_text'].lower()
-                if any(keyword in question_text for keyword in multimodal_keywords):
+                if any(keyword.lower() in question_text for keyword in multimodal_keywords):
                     multimodal_question_id = question['id']
                     multimodal_question_text = question['question_text']
                     break
@@ -872,7 +869,7 @@ class SurveyAnalytics:
             distance_keywords = ["cuántos kilómetros recorres"]
             
             for question in questions.data:
-                if any(keyword in question['question_text'].lower() for keyword in distance_keywords):
+                if any(keyword.lower() in question['question_text'].lower() for keyword in distance_keywords):
                     distance_question_id = question['id']
                     question_text = question['question_text']
                     break
@@ -892,6 +889,9 @@ class SurveyAnalytics:
                 {"name": "Más de 35 km", "min": 36, "max": float('inf'), "count": 0}
             ]
             
+            # Para calcular la media
+            all_distance_values = []
+            
             # Obtener todas las opciones para esta pregunta
             options = self.supabase.table('options').select('id', 'option_text').eq('question_id', distance_question_id).eq('company_id', self.company_id).execute()
             
@@ -909,6 +909,7 @@ class SurveyAnalytics:
                     distance_value = self._extract_distance_value(answer['open_value'])
                     
                     if distance_value is not None:
+                        all_distance_values.append(distance_value)
                         # Clasificar en el rango correspondiente
                         for range_info in distance_ranges:
                             if range_info["min"] <= distance_value <= range_info["max"]:
@@ -932,6 +933,8 @@ class SurveyAnalytics:
                         # Contar respuestas para esta opción
                         answers = self.supabase.table('answers').select('respondent_id').eq('option_id', option['id']).eq('company_id', self.company_id).execute()
                         matching_range["count"] += len(answers.data)
+                        # Agregar el valor tantas veces como respuestas válidas para la media
+                        all_distance_values.extend([distance_value] * len(answers.data))
             
             # Calcular total de respondentes únicos para esta pregunta
             total_respondents = self._count_unique_respondents_for_question(distance_question_id)
@@ -946,6 +949,13 @@ class SurveyAnalytics:
                 percentage = (range_info["count"] / total_respondents) * 100 if total_respondents > 0 else 0
                 percentages[range_info["name"]] = round(percentage, 2)
                 variables[f"N_distancia_tramo_{range_info['min']}-{range_info['max'] if range_info['max'] != float('inf') else '+'} km"] = range_info["count"]
+            
+            # Calcular la media de distancia (en km)
+            if all_distance_values:
+                avg_distance = sum(all_distance_values) / len(all_distance_values)
+                variables["distancia_media_km"] = round(avg_distance, 2)
+            else:
+                variables["distancia_media_km"] = None
             
             return {
                 "name": "Porcentaje de desplazamientos por tramo de distancia",
@@ -1079,7 +1089,7 @@ class SurveyAnalytics:
             ]
             
             for question in questions.data:
-                if any(keyword in question['question_text'].lower() for keyword in time_keywords):
+                if any(keyword.lower() in question['question_text'].lower() for keyword in time_keywords):
                     time_question_id = question['id']
                     question_text = question['question_text']
                     break
@@ -1099,6 +1109,9 @@ class SurveyAnalytics:
                 {"name": "Más de 60 minutos", "min": 61, "max": float('inf'), "count": 0}
             ]
             
+            # Para calcular la media
+            all_time_values = []
+            
             # Obtener todas las opciones para esta pregunta
             options = self.supabase.table('options').select('id', 'option_text').eq('question_id', time_question_id).eq('company_id', self.company_id).execute()
             
@@ -1116,6 +1129,7 @@ class SurveyAnalytics:
                     time_value = self._extract_time_value(answer['open_value'])
                     
                     if time_value is not None:
+                        all_time_values.append(time_value)
                         # Clasificar en el rango correspondiente
                         for range_info in time_ranges:
                             if range_info["min"] <= time_value <= range_info["max"]:
@@ -1139,6 +1153,8 @@ class SurveyAnalytics:
                         # Contar respuestas para esta opción
                         answers = self.supabase.table('answers').select('respondent_id').eq('option_id', option['id']).eq('company_id', self.company_id).execute()
                         matching_range["count"] += len(answers.data)
+                        # Agregar el valor tantas veces como respuestas válidas para la media
+                        all_time_values.extend([time_value] * len(answers.data))
             
             # Calcular total de respondentes únicos para esta pregunta
             total_respondents = self._count_unique_respondents_for_question(time_question_id)
@@ -1153,6 +1169,13 @@ class SurveyAnalytics:
                 percentage = (range_info["count"] / total_respondents) * 100 if total_respondents > 0 else 0
                 percentages[range_info["name"]] = round(percentage, 2)
                 variables[f"N_tiempo_tramo_{range_info['min']}-{range_info['max'] if range_info['max'] != float('inf') else '+'} min"] = range_info["count"]
+            
+            # Calcular la media de tiempo (en minutos)
+            if all_time_values:
+                avg_time = sum(all_time_values) / len(all_time_values)
+                variables["tiempo_medio_minutos"] = round(avg_time, 2)
+            else:
+                variables["tiempo_medio_minutos"] = None
             
             return {
                 "name": "Porcentaje de desplazamientos por tramo de tiempo",
@@ -1316,13 +1339,12 @@ class SurveyAnalytics:
             
             # Palabras clave para identificar la pregunta sobre desplazamientos en misión
             mission_keywords = [
-                "desplazamientos durante", "más desplazamientos", "otros desplazamientos", 
-                "desplazamientos adicionales", "desplazamiento en misión"
+                "desplazamientos durante la jornada laboral","desplazamientos durante", "más desplazamientos"
             ]
             
             # Buscar la pregunta adecuada
             for question in questions.data:
-                if any(keyword in question['question_text'].lower() for keyword in mission_keywords):
+                if any(keyword.lower() in question['question_text'].lower() for keyword in mission_keywords):
                     mission_question_id = question['id']
                     question_text = question['question_text']
                     break
@@ -1457,14 +1479,14 @@ class SurveyAnalytics:
             
             # Palabras clave para identificar la pregunta sobre la propiedad del vehículo
             car_keywords = [
-                "vehículo que utilizas", "coche que utilizas", "vehículo propiedad", 
-                "coche propio", "coche de empresa", "vehículo de empresa", "propiedad de la compañía"
+                "vehículo que utilizas para ir al trabajo", "coche que utilizas para ir al trabajo", "vehículo propiedad", 
+                "coche de empresa", "vehículo de empresa", "propiedad de la compañía"
             ]
             
             # Buscar la pregunta adecuada
             for question in questions.data:
                 question_lower = question['question_text'].lower()
-                if any(keyword in question_lower for keyword in car_keywords):
+                if any(keyword.lower() in question_lower for keyword in car_keywords):
                     car_ownership_question_id = question['id']
                     question_text = question['question_text']
                     break
@@ -1590,7 +1612,7 @@ class SurveyAnalytics:
             # Buscar la pregunta adecuada
             for question in questions.data:
                 question_lower = question['question_text'].lower()
-                if any(keyword in question_lower for keyword in engine_keywords):
+                if any(keyword.lower() in question_lower for keyword in engine_keywords):
                     engine_question_id = question['id']
                     question_text = question['question_text']
                     break
@@ -1765,7 +1787,7 @@ class SurveyAnalytics:
                 question_lower = question['question_text'].lower()
                 
                 # Verificar si la pregunta contiene palabras clave relacionadas con intención de compra y vehículo eléctrico
-                if "eléctrico" in question_lower and any(keyword in question_lower for keyword in ev_intention_keywords):
+                if "eléctrico" in question_lower and any(keyword.lower() in question_lower for keyword in ev_intention_keywords):
                     ev_intention_question_id = question['id']
                     question_text = question['question_text']
                     break
@@ -1919,7 +1941,7 @@ class SurveyAnalytics:
                 question_lower = question['question_text'].lower()
                 
                 # Verificar si la pregunta contiene palabras clave relacionadas con aparcamiento
-                if "aparcamiento" in question_lower or "parking" in question_lower or any(keyword in question_lower for keyword in parking_keywords):
+                if "aparcamiento" in question_lower or "parking" in question_lower or any(keyword.lower() in question_lower for keyword in parking_keywords):
                     parking_question_id = question['id']
                     question_text = question['question_text']
                     break
@@ -1983,7 +2005,7 @@ class SurveyAnalytics:
                     respondents.add(respondent_id)
                     
                     # Identificar si es aparcamiento en el centro de trabajo
-                    if any(keyword in response_text for keyword in workplace_keywords):
+                    if any(keyword.lower() in response_text for keyword in workplace_keywords):
                         workplace_parking_count += 1
                 
                 total_responses = len(respondents)
@@ -2057,7 +2079,7 @@ class SurveyAnalytics:
                     parking_problems_question_id = question['id']
                     question_text = question['question_text']
                     break
-                elif any(keyword in question_lower for keyword in parking_problems_keywords):
+                elif any(keyword.lower() in question_lower for keyword in parking_problems_keywords):
                     parking_problems_question_id = question['id']
                     question_text = question['question_text']
                     break
@@ -2194,9 +2216,7 @@ class SurveyAnalytics:
             # Palabras clave para identificar la pregunta sobre barreras al transporte público
             barriers_keywords = [
                 "indica las principales razones por las que no utilizas el transporte público",
-                "razones", "motivos", "barreras", "limitaciones", "dificultades", 
-                "no utilizas", "no usas", "no usar", "no utilizar", "impiden utilizar",
-                "impiden usar", "por qué no", "razón por la que no"
+                "por las que no utilizas el transporte público"
             ]
         
             
@@ -2205,7 +2225,7 @@ class SurveyAnalytics:
                 question_lower = question['question_text'].lower()
                 
                 # Verificar si la pregunta contiene palabras clave relacionadas con barreras y transporte público
-                if any(keyword in question_lower for keyword in barriers_keywords):
+                if any(keyword.lower() in question_lower for keyword in barriers_keywords):
                     barriers_question_id = question['id']
                     question_text = question['question_text']
                     
@@ -2308,7 +2328,7 @@ class SurveyAnalytics:
                     # Verificar qué barreras se mencionan en la respuesta
                     matched = False
                     for barrier_key, keywords in common_barriers.items():
-                        if any(keyword in response_text for keyword in keywords):
+                        if any(keyword.lower() in response_text for keyword in keywords):
                             option_counts[barrier_key] += 1
                             matched = True
                             
@@ -2395,10 +2415,8 @@ class SurveyAnalytics:
             
             # Palabras clave para identificar la pregunta sobre motivaciones
             motivations_keywords = [
-                "principales motivos",
-                "por qué utilizas", "por qué usas", "motivo", "razón", "motivación", 
-                "incentivo", "ventaja", "beneficio", "factor", "favorable",
-                "preferencia", "elección", "decisión de usar"
+                "indica los principales motivos por los que te desplazas al trabajo en transporte público",
+                "motivos por los que te desplazas al trabajo en transporte público"
             ]
             
             transport_keywords = [
@@ -2410,8 +2428,8 @@ class SurveyAnalytics:
                 question_lower = question['question_text'].lower()
                 
                 # Verificar si la pregunta contiene palabras clave relacionadas con motivaciones y transporte público
-                transport_mentioned = any(keyword in question_lower for keyword in transport_keywords)
-                motivation_mentioned = any(keyword in question_lower for keyword in motivations_keywords)
+                transport_mentioned = any(keyword.lower() in question_lower for keyword in transport_keywords)
+                motivation_mentioned = any(keyword.lower() in question_lower for keyword in motivations_keywords)
                 
                 if transport_mentioned and motivation_mentioned:
                     motivations_question_id = question['id']
@@ -2481,7 +2499,7 @@ class SurveyAnalytics:
                     
                     # Verificar qué motivaciones se mencionan en la respuesta
                     for motivation_key, keywords in common_motivations.items():
-                        if any(keyword in response_text for keyword in keywords):
+                        if any(keyword.lower() in response_text for keyword in keywords):
                             option_counts[motivation_key] += 1
             
             # Total de usuarios de transporte público que respondieron
@@ -2550,16 +2568,14 @@ class SurveyAnalytics:
             
             # Palabras clave para identificar la pregunta sobre compartir coche
             car_sharing_keywords = [
-                "compartir coche", "compartir vehículo", "coche compartido", 
-                "carpooling", "car sharing", "car-sharing", "carpool",
-                "dispuesto a compartir", "compartirías", "compartirías tu coche", 
-                "compartir trayecto"
+                "compartir coche con otras personas",
+                "compartir coche", "compartir vehículo"
             ]
             
             # Buscar la pregunta adecuada
             for question in questions.data:
                 question_lower = question['question_text'].lower()
-                if any(keyword in question_lower for keyword in car_sharing_keywords):
+                if any(keyword.lower() in question_lower for keyword in car_sharing_keywords):
                     car_sharing_question_id = question['id']
                     question_text = question['question_text']
                     break
@@ -2666,12 +2682,7 @@ class SurveyAnalytics:
             
             # Palabras clave para identificar la pregunta sobre conocimiento de líneas de transporte público
             awareness_keywords = [
-                "conoces las líneas", "conoces líneas", "conoce las líneas", "conoce líneas",
-                "conoces el transporte público", "conoces las rutas", "conoces rutas",
-                "sabes qué líneas", "sabes que líneas", "sabes qué rutas", "sabes que rutas",
-                "conocimiento de líneas", "conocimiento de rutas", "conocimiento del transporte público",
-                "líneas de autobús", "líneas de metro", "líneas de tren", "líneas cercanas",
-                "transporte público cercano", "transporte público próximo"
+                "conoces las líneas", "conoces líneas", "conoce las líneas", "conoce líneas"
             ]
             
             # Buscar la pregunta adecuada
@@ -2679,7 +2690,7 @@ class SurveyAnalytics:
                 question_lower = question['question_text'].lower()
                 
                 # Verificar si la pregunta contiene palabras clave relacionadas con conocimiento de líneas de transporte público
-                if any(keyword in question_lower for keyword in awareness_keywords):
+                if any(keyword.lower() in question_lower for keyword in awareness_keywords):
                     awareness_question_id = question['id']
                     question_text = question['question_text']
                     break
@@ -2817,18 +2828,15 @@ class SurveyAnalytics:
             
             # Palabras clave para identificar la pregunta sobre factores de mejora
             improvement_keywords = [
-                "haría que el uso del transporte público", "haría más atractivo",
-                "mejoraría el transporte público", "mejorar el transporte público",
-                "mejorar la oferta de transporte público", "haría que usaras",
-                "motivaría a usar el transporte público", "para usar más el transporte público",
-                "factor de mejora", "factores de mejora", "mejora del transporte",
-                "más atractivo", "más útil", "más eficiente", "más conveniente"
+                "haría que el uso del transporte público",
+                "transporte público fuera una opción de transporte más atractiva",
+                "haría más atractivo"
             ]
             
             # Buscar la pregunta adecuada
             for question in questions.data:
                 question_lower = question['question_text'].lower()
-                if any(keyword in question_lower for keyword in improvement_keywords):
+                if any(keyword.lower() in question_lower for keyword in improvement_keywords):
                     improvement_question_id = question['id']
                     question_text = question['question_text']
                     break
@@ -2959,7 +2967,7 @@ class SurveyAnalytics:
                 question_lower = question['question_text'].lower()
                 
                 # Verificar si la pregunta contiene palabras clave relacionadas con vías ciclistas
-                if any(keyword in question_lower for keyword in cycling_keywords):
+                if any(keyword.lower() in question_lower for keyword in cycling_keywords):
                     cycling_question_id = question['id']
                     question_text = question['question_text']
                     break
@@ -3093,10 +3101,7 @@ class SurveyAnalytics:
             # Keywords to identify the question about factors that would improve bicycle usage
             cycling_factors_keywords = [
                 "bicicleta fuera una opción más atractiva",
-                "mejoraría el uso de la bicicleta", "mejorarían el uso de la bicicleta", 
-                "factores para usar la bicicleta", "que te animaría a usar la bicicleta",
-                "qué te animaría a usar la bicicleta", "facilitar el uso de la bicicleta",
-                "mejorar uso bicicleta", "motivaría a usar bicicleta"
+                "uso de la bicicleta fuera una opción más"
             ]
             
             # Find the appropriate question
@@ -3104,7 +3109,7 @@ class SurveyAnalytics:
                 question_lower = question['question_text'].lower()
                 
                 # Check if the question contains keywords related to bicycle improvement factors
-                if any(keyword in question_lower for keyword in cycling_factors_keywords):
+                if any(keyword.lower() in question_lower for keyword in cycling_factors_keywords):
                     cycling_factors_question_id = question['id']
                     question_text = question['question_text']
                     break
@@ -3224,7 +3229,7 @@ class SurveyAnalytics:
             department_keywords = ["eres personal de", "área", "area", "department", "departamento", "división", "division"]
             for question in questions.data:
                 question_text = question['question_text'].lower()
-                if any(keyword in question_text for keyword in department_keywords):
+                if any(keyword.lower() in question_text for keyword in department_keywords):
                     department_question_id = question['id']
                     department_question_text = question['question_text']
                     break
@@ -3310,7 +3315,7 @@ class SurveyAnalytics:
             workdays_keywords = ["días de la semana que trabajas", "días que trabajas", "días laborables"]
             for question in questions.data:
                 question_text = question['question_text'].lower()
-                if any(keyword in question_text for keyword in workdays_keywords):
+                if any(keyword.lower() in question_text for keyword in workdays_keywords):
                     workdays_question_id = question['id']
                     workdays_question_text = question['question_text']
                     break
@@ -3403,14 +3408,13 @@ class SurveyAnalytics:
             
             # Search for the question using keywords
             multimodal_keywords = [
-                "Si combinas varios medios de transporte",
-                "combinas", "combine", "combinación", "combination", 
-                "varios medios", "multiple modes", "multimodal",
-                "más de un medio", "more than one mode", "varios transportes"
+                "si combinas varios medios de transporte",
+                "combinas medios de transporte",
+                "combinas"
             ]
             for question in questions.data:
                 question_text = question['question_text'].lower()
-                if any(keyword in question_text for keyword in multimodal_keywords):
+                if any(keyword.lower() in question_text for keyword in multimodal_keywords):
                     multimodal_question_id = question['id']
                     multimodal_question_text = question['question_text']
                     break
@@ -3543,7 +3547,7 @@ class SurveyAnalytics:
             # Find the right question
             for question in questions.data:
                 question_lower = question['question_text'].lower()
-                if any(keyword in question_lower for keyword in occupancy_keywords):
+                if any(keyword.lower() in question_lower for keyword in occupancy_keywords):
                     occupancy_question_id = question['id']
                     question_text = question['question_text']
                     break
@@ -3684,7 +3688,7 @@ class SurveyAnalytics:
             # Find the right question
             for question in questions.data:
                 question_lower = question['question_text'].lower()
-                if any(keyword in question_lower for keyword in time_keywords):
+                if any(keyword.lower() in question_lower for keyword in time_keywords):
                     time_question_id = question['id']
                     question_text = question['question_text']
                     break
@@ -3829,7 +3833,7 @@ class SurveyAnalytics:
             keywords = [
                 "en relación al servicio actual de transporte público valora tu nivel de satisfacción",
                 "servicio actual de transporte público",
-                "satisfacción", "satisfaccion", "nivel de satisfaccion"
+                "nivel de satisfaccion"
             ]
             # Find the right question
             for question in questions.data:
@@ -3855,6 +3859,7 @@ class SurveyAnalytics:
             ]
             counts = {label: 0 for _, _, label in ranges}
             total_valid = 0
+            values = []
             for answer in answers.data:
                 value_raw = answer.get('open_value')
                 if value_raw is None:
@@ -3875,6 +3880,7 @@ class SurveyAnalytics:
                     continue
                 if not (0 <= value <= 100):
                     continue
+                values.append(value)
                 for minv, maxv, label in ranges:
                     if minv <= value <= maxv:
                         counts[label] += 1
@@ -3887,13 +3893,19 @@ class SurveyAnalytics:
                 }
             # Calcular porcentajes
             result = {label: round((count / total_valid) * 100, 2) for label, count in counts.items()}
+            # Calcular la media de satisfacción
+            if values:
+                avg_satisfaction = sum(values) / len(values)
+            else:
+                avg_satisfaction = None
             return {
                 "name": "Distribución de satisfacción con el transporte público",
                 "question": satisfaction_question_text,
                 "result": result,
                 "variables": {
                     "N_respuestas_válidas": total_valid,
-                    "counts": counts
+                    "counts": counts,
+                    "satisfaccion_media": round(avg_satisfaction, 2) if avg_satisfaction is not None else None
                 }
             }
         except Exception as e:
@@ -4478,4 +4490,114 @@ class SurveyAnalytics:
             return {
                 "name": "Porcentaje por barrera al uso de bicicleta/patinete",
                 "error": f"Error al calcular la distribución: {e}"
+            }
+
+    def calculate_car_sharing_improvement_factors_percentage(self):
+        """
+        Calcula el porcentaje por factor que haría más atractivo compartir coche (carpooling).
+        Analiza una pregunta multiopción (con opción 'otros') sobre qué medidas harían más atractivo compartir coche.
+        Devuelve porcentajes por factor y variables de conteo.
+        """
+        try:
+            # Buscar la pregunta relacionada con factores de mejora para compartir coche
+            questions = self.supabase.table('questions').select('id', 'question_text').eq('company_id', self.company_id).execute()
+            improvement_question_id = None
+            question_text = "Factores para hacer más atractivo compartir coche"
+            
+            # Palabras clave para identificar la pregunta
+            improvement_keywords = [
+                "haría que compartir viaje en coche fuera una opción de transporte más atractiva",
+                "haría que compartir coche fuera una opción de transporte más atractiva",
+                "compartir coche más atractivo",
+                "medidas para compartir coche",
+                "qué haría que compartir coche"
+            ]
+            
+            for question in questions.data:
+                question_lower = question['question_text'].lower()
+                if any(keyword.lower() in question_lower for keyword in improvement_keywords):
+                    improvement_question_id = question['id']
+                    question_text = question['question_text']
+                    break
+            
+            if not improvement_question_id:
+                return {
+                    "name": "Porcentaje por factor de mejora para compartir coche",
+                    "error": "No se encontró ninguna pregunta relacionada con factores de mejora para compartir coche"
+                }
+            
+            # Obtener todas las opciones para esta pregunta
+            options = self.supabase.table('options').select('id', 'option_text').eq('question_id', improvement_question_id).eq('company_id', self.company_id).execute()
+            
+            # Diccionario para almacenar el recuento de cada factor
+            factor_counts = {}
+            all_respondents = set()
+            otros_textos = []
+            otros_option_id = None
+            
+            if options.data:
+                # Mapear las opciones a sus textos
+                option_texts = {option['id']: option['option_text'] for option in options.data}
+                # Detectar si hay opción 'otros'
+                for option in options.data:
+                    if option['option_text'].strip().lower() in ["otros", "otro", "other"]:
+                        otros_option_id = option['id']
+                
+                # Contar respuestas para cada opción
+                for option_id, option_text in option_texts.items():
+                    answers = self.supabase.table('answers').select('respondent_id', 'open_value').eq('option_id', option_id).eq('company_id', self.company_id).execute()
+                    count = len(answers.data)
+                    if count > 0:
+                        if option_id == otros_option_id:
+                            # Acumular textos libres de 'otros'
+                            for answer in answers.data:
+                                if answer.get('open_value'):
+                                    otros_textos.append(answer['open_value'].strip())
+                        else:
+                            factor_counts[option_text] = count
+                        for answer in answers.data:
+                            all_respondents.add(answer['respondent_id'])
+                # Contar los textos de 'otros' como un factor separado
+                if otros_textos:
+                    factor_counts['Otros (especificar)'] = len(otros_textos)
+            else:
+                # Si es una pregunta de texto libre
+                answers = self.supabase.table('answers').select('open_value', 'respondent_id').eq('question_id', improvement_question_id).eq('company_id', self.company_id).execute()
+                for answer in answers.data:
+                    open_value = answer.get('open_value', '').strip()
+                    if open_value:
+                        otros_textos.append(open_value)
+                        all_respondents.add(answer['respondent_id'])
+                if otros_textos:
+                    factor_counts['Otros (especificar)'] = len(otros_textos)
+            
+            # Si no hay respuestas válidas, devolver error
+            if not factor_counts:
+                return {
+                    "name": "Porcentaje por factor de mejora para compartir coche",
+                    "error": "No se encontraron respuestas válidas a la pregunta sobre factores de mejora para compartir coche"
+                }
+            
+            total_mentions = sum(factor_counts.values())
+            percentages = {factor: round((count / total_mentions) * 100, 2) for factor, count in factor_counts.items()}
+            sorted_percentages = {k: v for k, v in sorted(percentages.items(), key=lambda item: item[1], reverse=True)}
+            variables = {
+                "N_respondentes": len(all_respondents),
+                "N_respuestas_total": total_mentions
+            }
+            for factor, count in factor_counts.items():
+                safe_factor_name = factor.replace(" ", "_").lower()
+                variables[f"N_factor_{safe_factor_name}"] = count
+            if otros_textos:
+                variables["otros_textos"] = otros_textos
+            return {
+                "name": "Porcentaje por factor de mejora para compartir coche",
+                "question": question_text,
+                "result": sorted_percentages,
+                "variables": variables
+            }
+        except Exception as e:
+            return {
+                "name": "Porcentaje por factor de mejora para compartir coche",
+                "error": f"Error al calcular el porcentaje por factor de mejora para compartir coche: {e}"
             }

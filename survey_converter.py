@@ -187,8 +187,8 @@ class SurveyMonkeyConverter:
         result = [cls.row_to_qa(row, groups) for _, row in df.iterrows()]
         
         # Save the result to a JSON file for reference
-        import json
-        with open("result.json", "w", encoding="utf-8") as f:
-            json.dump(result, f, indent=4, ensure_ascii=False)  
+        # import json
+        # with open("result.json", "w", encoding="utf-8") as f:
+        #     json.dump(result, f, indent=4, ensure_ascii=False)  
         
         return result

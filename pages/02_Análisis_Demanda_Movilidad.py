@@ -139,12 +139,14 @@ def perform_analysis(company_name, total_employees, company_id, supabase, status
 
         st.write("🚲 Analizando compartir coche y ciclismo...")
         car_sharing_willingness_percentage = analytics.calculate_car_sharing_willingness_percentage()
+        car_sharing_improvement_factors_percentage = analytics.calculate_car_sharing_improvement_factors_percentage()
         cycling_routes_awareness_percentage = analytics.calculate_cycling_routes_awareness_percentage()
         cycling_improvement_factors_percentage = analytics.calculate_cycling_improvement_factors_percentage()
         pedestrian_environment_rating = analytics.calculate_pedestrian_environment_rating()
         open_proposals_for_mobility = analytics.analyze_open_proposals_for_mobility(ReportGenerator(model="openai/gpt-4o-mini"))
         analysis_results.extend([
             car_sharing_willingness_percentage,
+            car_sharing_improvement_factors_percentage,
             cycling_routes_awareness_percentage,
             cycling_improvement_factors_percentage,
             pedestrian_environment_rating,
@@ -329,19 +331,21 @@ def display_results_in_tabs(analysis_results):
         return
         
     # Crear pestañas
-    tab1, tab2 = st.tabs(["📝 Informe Generado", "📊 Datos en JSON"])
+    tab1, tab2, tab3 = st.tabs(["📝 Informe Generado", "✅ Verificación", "📊 Datos en JSON"])
     
     # Pestaña 1: Informe generado
     with tab1:
         st.markdown(st.session_state.mobility_report)
-        
-        # Mostrar resultado de verificación si está disponible
-        st.markdown("## ✅ Verificación")
+    
+    # Pestaña 2: Verificación
+    with tab2:
         if 'mobility_verification_result' in st.session_state and st.session_state.mobility_verification_result:
             st.markdown(st.session_state.mobility_verification_result)
+        else:
+            st.info("No hay resultado de verificación disponible.")
     
-    # Pestaña 2: JSON de resultados
-    with tab2:
+    # Pestaña 3: JSON de resultados
+    with tab3:
         st.json(analysis_results)
 
 

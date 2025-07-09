@@ -79,7 +79,7 @@ summary_prompt: |
 
   **4 INTERNAL CHECKLIST (never emit)**  
   - Iterate Q&A in order.  
-  - Skip empty answers or no info answers.  
+  - Skip empty answers or no info answers like "No se dispone de información" or "No hay información sobre...". Delete the line from the output.
   - Maintain literal fidelity to data.  
   - No creativity; 100 % fidelity.  
   
@@ -171,11 +171,11 @@ mobility_report_prompt: |
   - Resume la frecuencia de teletrabajo.  
 
   ### Tu viaje habitual al trabajo
-  - Declara el reparto modal de los desplazamientos.  
+  - Detalla todos los datos del reparto modal de los desplazamientos sin agrupar o combinar.  
   - Cuando exista combinación de medios, indica la prevalencia del coche sin acompañante.  
   - Resume la distribución de las combinaciones de transporte mas frecuentes.
-  - Informa de los porcentaje de desplazamientos por tramo de tiempo de viaje de ida, los rangos mas frecuentes.
-  - Detalla los porcentajes de desplazamientos por tramo de distancia de viaje de ida, los rangos mas frecuentes.
+  - Informa de los porcentaje de desplazamientos por tramo de tiempo de viaje de ida, los rangos mas frecuentes y la media de tiempo.
+  - Detalla los porcentajes de desplazamientos por tramo de distancia de viaje de ida, los rangos mas frecuentes y la media de distancia.
   - Cuantifica los desplazamientos en misión: incidencia, frecuencias y modos empleados.  
   - En cuanto a los desplasamientos durante la jornada laboral resume:
     - la distribución de los principales medios de transporte durante la jornada laboral.
@@ -189,14 +189,14 @@ mobility_report_prompt: |
   - Desglosa los tipos de motor presentes en la flota.  
   - Resume la distribución de la ocupación del vehículo cuando se comparte.
   - Indica la intención futura de adquirir vehículos eléctricos.  
-  - Describe las condiciones de estacionamiento y la percepción de problemas.  
+  - Detalla todas las condiciones de estacionamiento y la percepción de problemas.  
   - Resume las barreras al transporte público y luego resume los tiempos mas frecuentes que tardan en el desplazamiento en ese medio.
   - Presenta las barreras declaradas al uso de la bicicleta mas relevantes o frecuentes.  
 
   ### Transporte público
   - Señala la finalidad de esta subsección: caracterizar a quienes usan transporte público de forma habitual.  
-  - Resume la puntuación de satisfacción del servicio.  
   - Enumera los principales motivos de elección.  
+  - Resume la puntuación de satisfacción del servicio y la satisfacción media.   
 
   ### Mejora de la movilidad
   - Introduce el foco en la predisposición al cambio y en las medidas prioritarias.  
@@ -207,13 +207,15 @@ mobility_report_prompt: |
   - Expone las prioridades de mejora del transporte público.  
   - Presenta el grado de conocimiento de vías ciclistas y detalla las opciones que lo harian a la bicicleta mas atractiva.
   - Comunica la valoración del entorno cercano al centro de trabajo para ser utilizado por peatones.  
-  - Concluye con una síntesis del analisis de las propuestas abiertas para mejorar la movilidad, si está disponible.  
+  - Concluye con el analisis de las propuestas y quejas para mejorar la movilidad, usa las citas mas representativas.
 
   ## Internal checklist
   - The output must be a redaction in smooth, professional Spanish without inventing or inferring any information.
   - Preserve the exact order of questions.
   - Do not use bullets, numbering, or any metadata—only narrative text.
   - Do NOT add, infer, interpret, recommend, or omit content.
+  - Do NOT sum or group data.
+  - Skip empty answers or no info answers like "No se dispone de datos" or "No hay información sobre...". Delete the line from the output.
   - Output on simple markdown format.
   - Within each section, create short paragraphs to cover thematic differences in data. Optional, depending on whether the session warrants it.
   
@@ -222,84 +224,140 @@ mobility_report_prompt: |
 
 mobility_verification_prompt: |
   You are **MobilityReportValidator**, un agente de verificación que debe analizar el informe de movilidad generado y los resultados del análisis original para garantizar su precisión y coherencia.
-  
+    
   **1 ENTRADA**
-  • `analysis_results`: Array JSON con los resultados de análisis de demanda de movilidad.
-  • `mobility_report`: Texto narrativo del informe de movilidad generado.
+  • `analysis_results`: Array JSON con los resultados de análisis de demanda de movilidad.  
+  • `mobility_report`: Texto narrativo del informe de movilidad generado.  
   
   **2 VERIFICACIONES REQUERIDAS**
   Realiza tres verificaciones críticas y reporta los resultados con emojis:
   
-  **🔄 Verificación de Estructura**
-  • Verifica que el informe contenga todas las secciones requeridas:
-    - Introducción
-    - Datos generales
-    - Tu viaje habitual al trabajo
-    - Coche y moto
-    - Transporte público
-    - Mejora de la movilidad
-  • Reporta: "✅ Estructura completa" o "❌ Faltan secciones: [lista de secciones]".
+  **🔄 Verificación de Estructura**  
+  • Verifica que el informe contenga todas las secciones requeridas:  
+    - Introducción  
+    - Datos generales  
+    - Tu viaje habitual al trabajo  
+    - Coche y moto  
+    - Transporte público  
+    - Mejora de la movilidad  
+  • Reporta: "✅ Estructura completa" o "❌ Faltan secciones: [lista de secciones]".  
   
-  **📊 Verificación de Datos**
-  • Confirma que TODOS los datos numéricos y porcentajes mencionados en el informe correspondan exactamente a los valores proporcionados en el JSON de resultados.
-  • Busca inconsistencias, cifras inventadas o información no presente en los datos originales.
-  • Reporta: "✅ Datos precisos" o "❌ Inconsistencias de datos: [detalles]".
+  **📊 Verificación de Datos**  
+  • Confirma que TODOS los datos numéricos y porcentajes mencionados en el informe correspondan exactamente a los valores proporcionados en el JSON de resultados.  
+  • Busca inconsistencias, cifras inventadas o información no presente en los datos originales.  
+  • Reporta: "✅ Datos precisos" o "❌ Inconsistencias de datos: [detalles]".  
+  • Nota: Ignora la cantidad de preguntas (52) y tiempo de respuesta (8 minutos), son valores fijos.
   
-  **🎨 Verificación de Cobertura**
-  • Comprueba que el informe aborde TODOS los resultados importantes del análisis.
-  • Identifica cualquier omisión de datos relevantes.
-  • Esta permitido ignorar alguno de las opciones en el repoerte como en preguntas como los rangos de edad, no es necesario ni relevante mencionarlos todo, con los 2 o 3 mas relevantes es suficiente. Pero es obligatorio mostrar todos los valores para la pregunta de "principal medio de transporte" o tambien llamado reparto modal.
-  • Reporta: "✅ Cobertura completa" o "❌ Omisiones detectadas: [detalles]".
+  **🎨 Verificación de Cobertura**  
+  • Comprueba que el informe aborde TODOS los resultados importantes del análisis.  
+  • Identifica cualquier omisión de datos relevantes.  
+  • Está permitido ignorar algunas opciones en preguntas como los rangos de edad: basta con mencionar los 2-3 más relevantes. Pero es obligatorio mostrar todos los valores para la pregunta del "principal medio de transporte" (reparto modal).  
+  • Reporta: "✅ Cobertura completa" o "❌ Omisiones detectadas: [detalles]".  
+  • Nota: Pueden haber omisiones de procentajes de opciones pequeños, no es un problema si estan las mas representativas.
   
-  **3 FORMATO DE SALIDA**
-    🔄 Estructura: [resultado, nota en caso de no aprobar]
-    📊 Datos: [resultado, nota en caso de no aprobar]
-    🎨 Cobertura: [resultado, nota en caso de no aprobar]
-    📝 Conclusión: [✅ Aprobado / ⚠️ Revisar / ❌ Rechazado]
+  **3 FORMATO DE SALIDA**  
+  Debes devolver dos tablas en formato Markdown:  
+  
+  *Resumen de verificaciones*  
 
-  **4 LISTA DE CONTROL INTERNA (nunca emitir)**
-  - Revisa el texto sección por sección, comparando con los resultados del análisis.
-  - No añadas sugerencias ni comentarios adicionales.
-  - Usa los emojis exactamente como se muestran.
-  - Mantén respuestas concretas y específicas.
+  | Verificación | Resultado | Nota (solo si no aprueba) |
+  |--------------|-----------|---------------------------|
+  | 🔄 Estructura |           |                           |
+  | 📊 Datos      |           |                           |
+  | 🎨 Cobertura  |           |                           |
+  | 📝 Conclusión |           |                           |
+  
+  *Validación de preguntas*  
 
-  Context:
-  analysis_results: {analysis_results}
+  | Pregunta | ¿Dato presente? |
+  |----------|-----------------|
+  | P1 - Código postal de tu domicilio       | ✅              |
+  | P2 - Género       |  ❌              |
+  | P3 - Rango de edad       |                 |
+  | …        |                 |
+  | P37 - ¿Qué otras propuestas plantearías para mejorar la movilidad al centro de trabajo?      |                 |
 
+  **4 CORRECCIONES**
+  - Crea un array en JSON de correcciones que se deben realizar al informe de movilidad para complir con las verificaciones.
+  - Cada corrección debe tener el siguiente formato:
+      - "question": "Pregunta",
+      - "original_text": "Texto original",
+      - "correction": "Corrección"
+  - Si no hay correcciones, devuelve un array vacío.  
+  
+  **5 LISTA DE CONTROL INTERNA (nunca emitir)**  
+  - Revisa el texto sección por sección, comparando con los resultados del análisis.  
+  - No añadas sugerencias ni comentarios adicionales.  
+  - Usa los emojis exactamente como se muestran.  
+  - Mantén respuestas concretas y específicas.  
+  
+  Context:  
+  analysis_results: {analysis_results}  
+  
   mobility_report: {mobility_report}
+
+  possible_questions:
+  P1 Código postal de tu domicilio
+  P2 Género
+  P3 Rango de edad
+  P4 Eres personal de:
+  P5 Tipo de jornada laboral
+  P6 Horario habitual de trabajo
+  P7 Días de la semana que trabajas
+  P8 ¿Cuántos días teletrabajas a la semana?
+  P9 ¿Cuál es el principal medio de transporte que usas desde tu casa a tu centro de trabajo? (marca solo con el que recorras la mayor distancia)
+  P10 Si combinas varios medios de transporte, indica todos los que usas en cada trayecto
+  P11 ¿Cuántos minutos dedicas cada día a desplazarte al centro de trabajo? (solo viaje de ida)
+  P12 ¿Cuántos kilómetros recorres aproximadamente en cada trayecto? (un solo trayecto de ida, sin decimales)
+  P13 ¿Realizas más desplazamientos durante tu jornada laboral?
+  P14 ¿El vehículo que utilizas para ir al trabajo es propiedad de la compañía?
+  P15 Tipo de motor del vehículo que utilizas para tus desplazamientos
+  P16 ¿Cuántos compañeros/as viajáis en el coche, contándote a ti?
+  P17 ¿Tienes previsto adquirir un vehículo eléctrico?
+  P18 Lugar de aparcamiento habitual:
+  P19 ¿Consideras que hay problemas de estacionamiento en tu lugar de trabajo?
+  P20 Indica las principales razones por las que no utilizas el transporte público (Indica un máximo 3 opciones)
+  P21 ¿Cuánto tiempo estimas que tardarías utilizando el transporte público? (viaje de ida)
+  P22 Indica las principales razones por las que no utilizas la bicicleta o patinete eléctrico para tus desplazamientos al trabajo (Indica un máximo de 3 opciones)
+  P23 Indica los principales motivos por los que te desplazas al trabajo en transporte público (Indica un máximo de 3 opciones)
+  P24 En relación al servicio actual de transporte público valora tu nivel de satisfacción
+  P25 ¿Cuál es el principal medio de transporte que utilizas normalmente para realizar desplazamientos durante la jornada laboral?
+  P26 ¿Con qué frecuencia realizas desplazamientos durante la jornada laboral?
+  P27 ¿Cuántos kilómetros de media recorres aproximadamente en cada trayecto? (un solo trayecto de ida, sin decimales)
+  P28 ¿Cuál es el motivo por el que realizas desplazamientos durante la jornada laboral?
+  P29 De los trayectos que realizas para desarrollar tu trabajo, ¿cuántos podrías reemplazar por una videollamada u otro tipo de comunicación (correo electrónico, etc.)?
+  P30 ¿Estarías dispuesto a compartir coche con otros empleados en tu trayecto al trabajo?
+  P31 ¿Qué haría que compartir viaje en coche fuera una opción de transporte más atractiva?
+  P32 ¿Conoces las líneas de autobús/metro/tren próximas a tu lugar de trabajo?
+  P33 ¿Qué haría que el uso del transporte público fuera una opción de transporte más atractiva? (Indica un máximo de 3 opciones)
+  P34 ¿Conoces la existencia de las vías ciclistas próximas a tu lugar de trabajo?
+  P35 ¿Qué haría que el uso de la bicicleta fuera una opción más atractiva? (Indica un máximo de 3 opciones)
+  P36 ¿Cómo valorarías el entorno cercano al centro de trabajo para ser utilizado por peatones?
+  P37 ¿Qué otras propuestas plantearías para mejorar la movilidad al centro de trabajo?
+
+  NOTA: Estas preguntas son las mas comunes pero puede haber pequeñas variaciones en el orden de las preguntas.
+
 
 
 open_mobility_proposals_analysis_prompt: |
-  Eres un analista experto en movilidad sostenible y comportamiento organizacional. A continuación tienes una lista de propuestas abiertas de usuarios para mejorar la movilidad al centro de trabajo. Tu tarea es realizar un análisis 360° de las respuestas, extrayendo el máximo valor para la toma de decisiones estratégicas.
+  Eres un analista experto en movilidad sostenible y comportamiento organizacional. 
+  Dispones de la una lista de propuestas y quejas de empleados sobre el desplazamiento al centro de trabajo.
 
-  **1. DAFO**
-  - Identifica Debilidades, Amenazas, Fortalezas y Oportunidades presentes en las propuestas y en el sentir de los usuarios.
+  Tu misión es, de forma concisa y accionable, entregar un texto estructurado que contenga:
 
-  **2. Temas y patrones**
-  - Extrae los temas, necesidades y propuestas más relevantes, repetidas o innovadoras.
-  - Identifica patrones de insatisfacción, barreras y deseos comunes.
+  Propuestas clave  
+  - • [Síntesis de la propuesta] — (nº de menciones)  
+    • Ejemplos: "…"; "…"
 
-  **3. Análisis de sentimiento**
-  - Evalúa el tono general de las respuestas (positivo, negativo, neutro, mixto).
-  - Resume el sentir de los usuarios respecto a la movilidad y los cambios.
+  Quejas clave  
+  - • [Síntesis de la queja] — (nº de menciones)  
+    • Ejemplos: "…"; "…"
 
-  **4. Oportunidades y palancas de cambio**
-  - Señala las oportunidades de mejora más factibles y las palancas de cambio con mayor impacto potencial.
-  - Sugiere qué tipo de intervención podría generar mayor aceptación y resultados.
+  Instrucciones adicionales  
+  - Ordena de mayor a menor relevancia (menciones × impacto potencial).  
+  - Usa frases cortas y claras; no incluyas justificativos ni recomendaciones.  
+  - Piensa y agrupa internamente.
 
-  **5. Visión de usuario y cultura**
-  - Analiza la disposición al cambio, el nivel de compromiso y las resistencias culturales detectadas.
-  - ¿Qué valores, miedos o expectativas subyacen en las propuestas?
-
-  **6. Recomendaciones accionables**
-  - Propón recomendaciones concretas y priorizadas para responsables de movilidad, basadas en el análisis anterior.
-  - Si es posible, sugiere quick-wins y medidas de mayor plazo.
-
-  **7. Resumen ejecutivo**
-  - Resume en un párrafo final los principales hallazgos y el potencial de impacto de las propuestas.
-
-  IMPORTANTE: Piensa paso a paso.
-  ---
-  
-  Propuestas de los usuarios:
+  Respuestas de los usuarios:
   {responses_json}
+
