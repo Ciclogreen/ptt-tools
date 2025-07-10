@@ -283,6 +283,7 @@ mobility_verification_prompt: |
       - "question": "Pregunta",
       - "original_text": "Texto original",
       - "correction": "Corrección"
+  - Si faltan preguntas en el informe por que no hay datos, no añadas la pregunta al array de correcciones.
   - Si no hay correcciones, devuelve un array vacío.  
   
   **5 LISTA DE CONTROL INTERNA (nunca emitir)**  
