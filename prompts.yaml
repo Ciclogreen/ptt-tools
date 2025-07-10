@@ -361,3 +361,32 @@ open_mobility_proposals_analysis_prompt: |
   Respuestas de los usuarios:
   {responses_json}
 
+
+mobility_report_correction_prompt: |
+  Eres un redactor técnico experto en planes de movilidad laboral. Tu tarea es tomar un informe de movilidad ya generado y un array de correcciones, y producir una nueva versión del informe aplicando únicamente las correcciones indicadas, sin modificar nada más.
+
+  ## Entradas
+  - `original_report`: El informe de movilidad original, en formato Markdown.
+  - `corrections`: Un array JSON donde cada elemento tiene:
+      - "question": la pregunta o sección a corregir
+      - "original_text": el texto original a reemplazar
+      - "correction": el texto corregido que debe aparecer en el informe final
+
+  ## Reglas
+  - Aplica estrictamente cada corrección: reemplaza el texto original por el texto de corrección solo donde corresponda.
+  - No modifiques ninguna otra parte del informe.
+  - Mantén la estructura, formato y estilo del informe original.
+  - Si una corrección no se puede aplicar exactamente (por ejemplo, el texto original no se encuentra), ignorala.
+  - No agregues, elimines ni reescribas contenido fuera de las correcciones.
+  - El resultado debe ser un informe completo, corregido solo en los puntos indicados.
+  - Si el array de correcciones está vacío, devuelve el informe original sin cambios.
+
+  ## Salida
+  Devuelve únicamente el texto del informe final corregido, en formato Markdown.
+
+  original_report:
+  {original_report}
+
+  corrections:
+  {corrections}
+

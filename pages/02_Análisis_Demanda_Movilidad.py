@@ -20,7 +20,7 @@ def init_session_state():
         st.session_state.analysis_results = []
         
     if 'total_employees' not in st.session_state:
-        st.session_state.total_employees = 600
+        st.session_state.total_employees = 592
     
     # Inicializar conexión Supabase
     if 'supabase' not in st.session_state:
@@ -168,9 +168,20 @@ def perform_analysis(company_name, total_employees, company_id, supabase, status
                 report
             )
             st.session_state.mobility_verification_result = verification_result
-            
-            # Actualizar costo total
-            total_cost = cost + verification_cost
+
+            # --- FLUJO DE AUTOCORRECCIÓN ---
+            # Extraer y aplicar correcciones si existen
+            corrections = generator.extract_corrections_from_verification(verification_result)
+            if corrections:
+                st.write("✏️ Aplicando correcciones al informe...")
+                corrected_report, correction_cost = generator.generate_corrected_mobility_report(report, corrections)
+                st.session_state.mobility_report_final = corrected_report
+                total_cost = cost + verification_cost + correction_cost
+            else:
+                st.session_state.mobility_report_final = report
+                total_cost = cost + verification_cost
+            # --- FIN FLUJO AUTOCORRECCIÓN ---
+
             status.update(label=f"✅ Análisis completado. Costo total: ${total_cost:.5f}", state="complete", expanded=False)
             return True, analysis_results, total_cost
         else:
@@ -329,11 +340,11 @@ def display_results_in_tabs(analysis_results):
     if not analysis_results or 'mobility_report' not in st.session_state:
         st.warning("⚠️ No hay resultados disponibles para mostrar.")
         return
-        
-    # Crear pestañas
-    tab1, tab2, tab3 = st.tabs(["📝 Informe Generado", "✅ Verificación", "📊 Datos en JSON"])
     
-    # Pestaña 1: Informe generado
+    # Crear pestañas
+    tab1, tab2, tab3, tab4 = st.tabs(["📝 Borrador", "✅ Verificación", "📄 Informe final", "📊 Datos en JSON"])
+    
+    # Pestaña 1: Borrador
     with tab1:
         st.markdown(st.session_state.mobility_report)
     
@@ -344,8 +355,15 @@ def display_results_in_tabs(analysis_results):
         else:
             st.info("No hay resultado de verificación disponible.")
     
-    # Pestaña 3: JSON de resultados
+    # Pestaña 3: Informe final
     with tab3:
+        if 'mobility_report_final' in st.session_state and st.session_state.mobility_report_final:
+            st.markdown(st.session_state.mobility_report_final)
+        else:
+            st.info("No hay informe final disponible. Si hay correcciones, se mostrarán aquí tras la verificación.")
+    
+    # Pestaña 4: JSON de resultados
+    with tab4:
         st.json(analysis_results)
 
 

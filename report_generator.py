@@ -462,6 +462,29 @@ class ReportGenerator:
             logger.error(f"Error al verificar informe de movilidad: {e}")
             return f"Error al verificar informe de movilidad: {e}", 0.0
 
+    def extract_corrections_from_verification(self, verification_result: str) -> list:
+        """
+        Extrae y parsea el array de correcciones del resultado de verificación (mobility_verification_result).
+        Args:
+            verification_result: Texto de verificación que contiene un array JSON de correcciones
+        Returns:
+            Lista de correcciones (cada una es un dict con 'question', 'original_text', 'correction')
+        """
+        import re
+        import json
+        # Buscar el array JSON de correcciones en el texto
+        match = re.search(r'\[\s*\{.*?\}\s*\]', verification_result, re.DOTALL)
+        if not match:
+            return []
+        try:
+            corrections = json.loads(match.group(0))
+            if isinstance(corrections, list):
+                return corrections
+            return []
+        except Exception as e:
+            logger.error(f"Error al parsear correcciones: {e}")
+            return []
+
     def analyze_open_mobility_proposals(self, responses: list) -> tuple:
         """
         Analiza una lista de propuestas abiertas para mejorar la movilidad usando LLM y un prompt especializado.
@@ -482,3 +505,28 @@ class ReportGenerator:
             return analysis, cost
         except Exception as e:
             return f"Error al analizar propuestas abiertas con LLM: {e}", 0.0
+
+    def generate_corrected_mobility_report(self, original_report: str, corrections: list) -> tuple:
+        """
+        Genera un informe de movilidad corregido aplicando solo las correcciones indicadas.
+        Args:
+            original_report: El texto del informe original
+            corrections: Lista de correcciones (cada una es un dict)
+        Returns:
+            Tuple (informe_final_corregido, costo_llm)
+        """
+        try:
+            import json
+            prompt_template = self.prompts.get("mobility_report_correction_prompt", "")
+            corrections_json = json.dumps(corrections, ensure_ascii=False, indent=2)
+            filled_prompt = prompt_template.format(
+                original_report=original_report,
+                corrections=corrections_json
+            )
+            print("filled_prompt: ", filled_prompt)
+            corrected_report, cost = self._call_llm_api(filled_prompt)
+            self._track_cost(cost, "mobility_report_correction")
+            return corrected_report, cost
+        except Exception as e:
+            logger.error(f"Error al generar informe corregido: {e}")
+            return f"Error al generar informe corregido: {e}", 0.0
